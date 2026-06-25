@@ -8,45 +8,67 @@ const { PORT = 3000, REMOTION_SERVE_URL } = process.env;
 
 function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
   const app = express();
-
   const rendersDir = path.resolve("renders");
 
+  // Инициализируем очередь рендеринга
   const queue = makeRenderQueue({
     port: Number(PORT),
     serveUrl: remotionBundleUrl,
     rendersDir,
   });
 
-  // Host renders on /renders
+  // Раздаем готовые видеофайлы из папки /renders
   app.use("/renders", express.static(rendersDir));
   app.use(express.json());
 
-  // Endpoint to create a new job
-  app.post("/renders", async (req, res) => {
-    const titleText = req.body?.titleText || "Hello, world!";
+  // ✅ УНИВЕРСАЛЬНЫЙ ЭНДПОИНТ ДЛЯ ЗАПУСКА РЕНДЕРИНГА
+  // Принимает как стандартный URL "/renders", так и ваш "/render" для полной совместимости с n8n!
+  const renderHandler = async (req: express.Request, res: express.Response) => {
+    // Извлекаем название композиции (по умолчанию SmirnoffDigest)
+    const composition = req.body?.composition || "SmirnoffDigest";
+    
+    // Извлекаем входные параметры (оригинальное видео и массив действий)
+    const inputProps = req.body?.inputProps || {};
 
-    if (typeof titleText !== "string") {
-      res.status(400).json({ message: "titleText must be a string" });
+    if (typeof composition !== "string") {
+      res.status(400).json({ message: "composition must be a string" });
       return;
     }
 
-    const jobId = queue.createJob({ titleText });
+    if (typeof inputProps !== "object") {
+      res.status(400).json({ message: "inputProps must be an object" });
+      return;
+    }
+
+    // Создаем задачу в очереди, передавая выбранную композицию и параметры
+    const jobId = queue.createJob({
+      composition,
+      inputProps,
+    });
 
     res.json({ jobId });
-  });
+  };
 
-  // Endpoint to get a job status
+  // Регистрируем обработчик на оба эндпоинта для исключения ошибок 404
+  app.post("/render", renderHandler);
+  app.post("/renders", renderHandler);
+
+  // Получение статуса задачи рендеринга
   app.get("/renders/:jobId", (req, res) => {
     const jobId = req.params.jobId;
     const job = queue.jobs.get(jobId);
 
+    if (!job) {
+      res.status(404).json({ message: "Job not found" });
+      return;
+    }
+
     res.json(job);
   });
 
-  // Endpoint to cancel a job
+  // Отмена активной задачи рендеринга
   app.delete("/renders/:jobId", (req, res) => {
     const jobId = req.params.jobId;
-
     const job = queue.jobs.get(jobId);
 
     if (!job) {
@@ -60,7 +82,6 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
     }
 
     job.cancel();
-
     res.json({ message: "Job cancelled" });
   });
 
@@ -68,8 +89,10 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
 }
 
 async function main() {
+  // Гарантируем наличие Chromium в среде выполнения Railway
   await ensureBrowser();
 
+  // Собираем проект Remotion в бандл
   const remotionBundleUrl = REMOTION_SERVE_URL
     ? REMOTION_SERVE_URL
     : await bundle({
