@@ -91,14 +91,27 @@ export function makeRenderQueue({
 		}
 	};
 
-	const createJob = ({
-		composition = "SmirnoffDigest",
-		inputProps = {},
-	}: {
+	const createJob = (args: {
 		composition?: string;
 		inputProps?: any;
-	}) => {
+		titleText?: string;
+	} = {}) => {
 		const jobId = randomUUID();
+		
+		// Сверхнадежное автоопределение параметров для полной совместимости:
+		// Если передан старый HelloWorld-запрос с titleText, либо если композиция HelloWorld —
+		// мы автоматически перенаправляем её на нашу рабочую композицию SmirnoffDigest.
+		let composition = args.composition || "SmirnoffDigest";
+		let inputProps = args.inputProps || {};
+
+		if (composition === "HelloWorld" || !composition) {
+			composition = "SmirnoffDigest";
+		}
+
+		// Если передан старый аргумент titleText, сохраняем его в свойствах
+		if (args.titleText && Object.keys(inputProps).length === 0) {
+			inputProps = { titleText: args.titleText };
+		}
 		
 		const job: Job = {
 			id: jobId,
