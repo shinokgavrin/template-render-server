@@ -1,4 +1,5 @@
-// ... existing code ...
+import React from "react";
+import { Composition } from "remotion";
 import { SmirnoffDigest } from "./SmirnoffDigest";
 
 export const RemotionRoot: React.FC = () => {
@@ -7,7 +8,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="SmirnoffDigest"
         component={SmirnoffDigest}
-        durationInFrames={30000} // This dynamically overrides during render based on the actual video length
+        durationInFrames={30000}
         fps={30}
         width={1920}
         height={1080}
