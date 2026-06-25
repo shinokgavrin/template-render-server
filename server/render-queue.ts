@@ -1,139 +1,129 @@
-import {
-  makeCancelSignal,
-  renderMedia,
-  selectComposition,
-} from "@remotion/renderer";
+import { renderMedia, selectComposition } from "@remotion/renderer";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import fs from "node:fs";
 
-interface JobData {
-  titleText: string;
-}
-
-type JobState =
-  | {
-      status: "queued";
-      data: JobData;
-      cancel: () => void;
-    }
-  | {
-      status: "in-progress";
-      progress: number;
-      data: JobData;
-      cancel: () => void;
-    }
-  | {
-      status: "completed";
-      videoUrl: string;
-      data: JobData;
-    }
-  | {
-      status: "failed";
-      error: Error;
-      data: JobData;
-    };
-
-const compositionId = "HelloWorld";
-
-export const makeRenderQueue = ({
-  port,
-  serveUrl,
-  rendersDir,
-}: {
-  port: number;
-  serveUrl: string;
-  rendersDir: string;
-}) => {
-  const jobs = new Map<string, JobState>();
-  let queue: Promise<unknown> = Promise.resolve();
-
-  const processRender = async (jobId: string) => {
-    const job = jobs.get(jobId);
-    if (!job) {
-      throw new Error(`Render job ${jobId} not found`);
-    }
-
-    const { cancel, cancelSignal } = makeCancelSignal();
-
-    jobs.set(jobId, {
-      progress: 0,
-      status: "in-progress",
-      cancel: cancel,
-      data: job.data,
-    });
-
-    try {
-      const inputProps = {
-        titleText: job.data.titleText,
-      };
-
-      const composition = await selectComposition({
-        serveUrl,
-        id: compositionId,
-        inputProps,
-      });
-
-      await renderMedia({
-        cancelSignal,
-        serveUrl,
-        composition,
-        inputProps,
-        codec: "h264",
-        onProgress: (progress) => {
-          console.info(`${jobId} render progress:`, progress.progress);
-          jobs.set(jobId, {
-            progress: progress.progress,
-            status: "in-progress",
-            cancel: cancel,
-            data: job.data,
-          });
-        },
-        outputLocation: path.join(rendersDir, `${jobId}.mp4`),
-      });
-
-      jobs.set(jobId, {
-        status: "completed",
-        videoUrl: `http://localhost:${port}/renders/${jobId}.mp4`,
-        data: job.data,
-      });
-    } catch (error) {
-      console.error(error);
-      jobs.set(jobId, {
-        status: "failed",
-        error: error as Error,
-        data: job.data,
-      });
-    }
-  };
-
-  const queueRender = async ({
-    jobId,
-    data,
-  }: {
-    jobId: string;
-    data: JobData;
-  }) => {
-    jobs.set(jobId, {
-      status: "queued",
-      data,
-      cancel: () => {
-        jobs.delete(jobId);
-      },
-    });
-
-    queue = queue.then(() => processRender(jobId));
-  };
-
-  function createJob(data: JobData) {
-    const jobId = randomUUID();
-
-    queueRender({ jobId, data });
-
-    return jobId;
-  }
-
-  return {
-    createJob,
-    jobs,
-  };
+export type Job = {
+	id: string;
+	status: "queued" | "in-progress" | "done" | "failed";
+	composition: string;
+	inputProps: any;
+	progress: number;
+	outPath: string | null;
+	error: string | null;
+	cancel: () => void;
 };
+
+export function makeRenderQueue({
+	port,
+	serveUrl,
+	rendersDir,
+}: {
+	port: number;
+	serveUrl: string;
+	rendersDir: string;
+}) {
+	const jobs = new Map<string, Job>();
+	let activeJobId: string | null = null;
+
+	// Создаем директорию для хранения готовых видеофайлов, если она отсутствует
+	if (!fs.existsSync(rendersDir)) {
+		fs.mkdirSync(rendersDir, { recursive: true });
+	}
+
+	const processQueue = async () => {
+		if (activeJobId) return;
+
+		// Находим первую задачу со статусом "queued" в очереди
+		const nextJobEntry = Array.from(jobs.entries()).find(
+			([_, job]) => job.status === "queued"
+		);
+
+		if (!nextJobEntry) return;
+
+		const [jobId, job] = nextJobEntry;
+		activeJobId = jobId;
+		job.status = "in-progress";
+
+		try {
+			const outPath = path.join(rendersDir, `${jobId}.mp4`);
+			
+			// Динамически выбираем композицию и передаем в нее входные параметры из запроса
+			const composition = await selectComposition({
+				serveUrl,
+				id: job.composition,
+				inputProps: job.inputProps,
+			});
+
+			let isCancelled = false;
+			job.cancel = () => {
+				isCancelled = true;
+				job.status = "failed";
+				job.error = "Render cancelled by user";
+			};
+
+			// Запускаем рендеринг видеофайла
+			await renderMedia({
+				composition,
+				serveUrl,
+				codec: "h264",
+				outputLocation: outPath,
+				inputProps: job.inputProps,
+				onProgress: (progress) => {
+					if (isCancelled) return;
+					job.progress = progress;
+				},
+			});
+
+			if (!isCancelled) {
+				job.status = "done";
+				job.progress = 1;
+				job.outPath = `/renders/${jobId}.mp4`;
+			}
+		} catch (err: any) {
+			job.status = "failed";
+			job.error = err.message || String(err);
+			console.error(`Error rendering job ${jobId}:`, err);
+		} finally {
+			activeJobId = null;
+			// Переходим к следующей задаче в очереди
+			processQueue();
+		}
+	};
+
+	const createJob = ({
+		composition = "SmirnoffDigest",
+		inputProps = {},
+	}: {
+		composition?: string;
+		inputProps?: any;
+	}) => {
+		const jobId = randomUUID();
+		
+		const job: Job = {
+			id: jobId,
+			status: "queued",
+			composition,
+			inputProps,
+			progress: 0,
+			outPath: null,
+			error: null,
+			cancel: () => {
+				job.status = "failed";
+				job.error = "Cancelled before starting";
+			},
+		};
+
+		jobs.set(jobId, job);
+		
+		// Запускаем выполнение очереди асинхронно
+		processQueue();
+
+		return jobId;
+	};
+
+	return {
+		jobs,
+		createJob,
+	};
+}
