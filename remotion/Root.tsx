@@ -1,5 +1,4 @@
-import React from "react";
-import { Composition } from "remotion";
+// ... existing code ...
 import { SmirnoffDigest } from "./SmirnoffDigest";
 
 export const RemotionRoot: React.FC = () => {
@@ -13,7 +12,7 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          originalVideoUrl: "https://dl.dropboxusercontent.com/s/sample-fallback-video.mp4",
+          originalVideoUrl: "https://pub-9133209d2ae746859bab1bf8500330d4.r2.dev/Smirsa_1080p.mp4",
           actions: [],
         }}
       />
