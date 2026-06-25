@@ -26,8 +26,8 @@ export const SmirnoffDigest: React.FC<{
 		currentTime <= a.end_time
 	);
 	
-	// If a TTS track is playing, drop the background video volume to 10% (ducking)
-	const backgroundVolume = isMuted ? 0.1 : 1;
+	// 🔥 DROPPED TO 0: Absolute silence when the main speaker is muted/transitioning
+	const backgroundVolume = isMuted ? 0 : 1;
 
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
