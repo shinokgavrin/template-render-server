@@ -17,8 +17,15 @@ function setupApp({ remotionBundleUrl }: { remotionBundleUrl: string }) {
     rendersDir,
   });
 
-  // Раздаем готовые видеофайлы из папки /renders
-  app.use("/renders", express.static(rendersDir));
+  // 🔥 ИСПРАВЛЕНИЕ CORS: Раздаем видеофайлы и разрешаем Remotion их читать 🔥
+  app.use("/renders", express.static(rendersDir, {
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+  }));
+  
   app.use(express.json());
 
   // ✅ УНИВЕРСАЛЬНЫЙ ЭНДПОИНТ ДЛЯ ЗАПУСКА РЕНДЕРИНГА
