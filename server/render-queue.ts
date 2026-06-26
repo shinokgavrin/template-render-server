@@ -27,7 +27,6 @@ export function makeRenderQueue({
 	const jobs = new Map<string, Job>();
 	let activeJobId: string | null = null;
 
-	// Создаем директорию для хранения готовых видеофайлов, если она отсутствует
 	if (!fs.existsSync(rendersDir)) {
 		fs.mkdirSync(rendersDir, { recursive: true });
 	}
@@ -35,7 +34,6 @@ export function makeRenderQueue({
 	const processQueue = async () => {
 		if (activeJobId) return;
 
-		// Находим первую задачу со статусом "queued" в очереди
 		const nextJobEntry = Array.from(jobs.entries()).find(
 			([_, job]) => job.status === "queued"
 		);
@@ -49,7 +47,6 @@ export function makeRenderQueue({
 		try {
 			const outPath = path.join(rendersDir, `${jobId}.mp4`);
 			
-			// Динамически выбираем композицию и передаем в нее входные параметры из запроса
 			const composition = await selectComposition({
 				serveUrl,
 				id: job.composition,
@@ -63,13 +60,19 @@ export function makeRenderQueue({
 				job.error = "Render cancelled by user";
 			};
 
-			// Запускаем рендеринг видеофайла
+			// 🔥 ЗАПУСК РЕНДЕРА С ЖЕСТКИМ ЛИМИТОМ ПАМЯТИ 🔥
 			await renderMedia({
 				composition,
 				serveUrl,
 				codec: "h264",
 				outputLocation: outPath,
 				inputProps: job.inputProps,
+				
+				// --- КРИТИЧЕСКИЕ НАСТРОЙКИ ДЛЯ СЛАБЫХ СЕРВЕРОВ ---
+				concurrency: 1, // Рендерить строго по 1 кадру (экономит гигабайты RAM)
+				imageFormat: "jpeg", // Использовать JPEG вместо PNG при извлечении кадров
+				jpegQuality: 80, // Оптимальный баланс памяти и качества
+				
 				onProgress: (progress) => {
 					if (isCancelled) return;
 					job.progress = progress;
@@ -77,7 +80,6 @@ export function makeRenderQueue({
 			});
 
 			if (!isCancelled) {
-				// 🔥 ПРЯМАЯ ЗАГРУЗКА В CLOUDFLARE R2 🔥
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
 					
@@ -93,7 +95,6 @@ export function makeRenderQueue({
 					const fileStream = fs.createReadStream(outPath);
 					const fileName = `Smirnoff_Video_${jobId}.mp4`;
 
-					// Используем стрим для загрузки, чтобы не перегружать RAM сервера
 					await s3Client.send(
 						new PutObjectCommand({
 							Bucket: process.env.R2_BUCKET_NAME,
@@ -106,14 +107,10 @@ export function makeRenderQueue({
 					console.log(`[R2 Upload] Upload complete!`);
 					job.status = "done";
 					job.progress = 1;
-					
-					// Формируем вашу публичную ссылку Cloudflare
 					job.outPath = `https://pub-9133209d2ae746859bab1bf8500330d4.r2.dev/${fileName}`;
 					
-					// Очищаем локальный файл после загрузки для экономии места на сервере
 					fs.unlinkSync(outPath);
 				} else {
-					// Fallback: если ключи не заданы, просто сохраняем на сервере
 					job.status = "done";
 					job.progress = 1;
 					job.outPath = `/renders/${jobId}.mp4`;
@@ -125,7 +122,6 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
-			// Переходим к следующей задаче в очереди
 			processQueue();
 		}
 	};
@@ -137,9 +133,6 @@ export function makeRenderQueue({
 	} = {}) => {
 		const jobId = randomUUID();
 		
-		// Сверхнадежное автоопределение параметров для полной совместимости:
-		// Если передан старый HelloWorld-запрос с titleText, либо если композиция HelloWorld —
-		// мы автоматически перенаправляем её на нашу рабочую композицию SmirnoffDigest.
 		let composition = args.composition || "SmirnoffDigest";
 		let inputProps = args.inputProps || {};
 
@@ -147,7 +140,6 @@ export function makeRenderQueue({
 			composition = "SmirnoffDigest";
 		}
 
-		// Если передан старый аргумент titleText, сохраняем его в свойствах
 		if (args.titleText && Object.keys(inputProps).length === 0) {
 			inputProps = { titleText: args.titleText };
 		}
@@ -167,8 +159,6 @@ export function makeRenderQueue({
 		};
 
 		jobs.set(jobId, job);
-		
-		// Запускаем выполнение очереди асинхронно
 		processQueue();
 
 		return jobId;
