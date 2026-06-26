@@ -3,6 +3,30 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import https from "node:https";
+import http from "node:http";
+
+// 🔥 Функция для безопасного скачивания файла сразу на жесткий диск (0% RAM)
+function downloadFileToDisk(url: string, dest: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const file = fs.createWriteStream(dest);
+		const client = url.startsWith("https") ? https : http;
+		
+		client.get(url, (response) => {
+			if (response.statusCode === 301 || response.statusCode === 302) {
+				return downloadFileToDisk(response.headers.location!, dest).then(resolve).catch(reject);
+			}
+			response.pipe(file);
+			file.on("finish", () => {
+				file.close();
+				resolve();
+			});
+		}).on("error", (err) => {
+			fs.unlink(dest, () => {});
+			reject(err);
+		});
+	});
+}
 
 export type Job = {
 	id: string;
@@ -44,9 +68,21 @@ export function makeRenderQueue({
 		activeJobId = jobId;
 		job.status = "in-progress";
 
+		const localInputVideoPath = path.join(rendersDir, `input_${jobId}.mp4`);
+		const outPath = path.join(rendersDir, `${jobId}.mp4`);
+
 		try {
-			const outPath = path.join(rendersDir, `${jobId}.mp4`);
-			
+			// 🔥 ШАГ 1: ЛОКАЛИЗАЦИЯ ТЯЖЕЛОГО ВИДЕО 🔥
+			let originalUrl = job.inputProps.originalVideoUrl;
+			if (originalUrl && originalUrl.startsWith("http")) {
+				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
+				await downloadFileToDisk(originalUrl, localInputVideoPath);
+				
+				// Подменяем ссылку на локальный сервер (Remotion будет читать с диска)
+				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
+				console.log(`[Localizer] Download complete! Using local URL for perfect smooth rendering.`);
+			}
+
 			const composition = await selectComposition({
 				serveUrl,
 				id: job.composition,
@@ -60,7 +96,7 @@ export function makeRenderQueue({
 				job.error = "Render cancelled by user";
 			};
 
-			// 🔥 ЗАПУСК РЕНДЕРА С ЖЕСТКИМ ЛИМИТОМ ПАМЯТИ 🔥
+			// 🔥 ШАГ 2: БЕЗОПАСНЫЙ РЕНДЕР 🔥
 			await renderMedia({
 				composition,
 				serveUrl,
@@ -68,14 +104,16 @@ export function makeRenderQueue({
 				outputLocation: outPath,
 				inputProps: job.inputProps,
 				
-				// --- КРИТИЧЕСКИЕ НАСТРОЙКИ ДЛЯ СЛАБЫХ СЕРВЕРОВ ---
-				concurrency: 1, // Рендерить строго по 1 кадру (экономит гигабайты RAM)
-				imageFormat: "jpeg", // Использовать JPEG вместо PNG при извлечении кадров
-				jpegQuality: 80, // Оптимальный баланс памяти и качества
+				concurrency: 1, 
+				imageFormat: "jpeg", 
+				jpegQuality: 80,
+				timeoutInMilliseconds: 3600000, 
 				
-				// 🔥 ГЛАВНЫЙ ФИКС SIGKILL: Отключаем крошечный лимит /dev/shm (64MB) в Docker/Railway 🔥
 				chromiumOptions: {
-					args: ["--disable-dev-shm-usage", "--no-sandbox"],
+					args: [
+						"--disable-dev-shm-usage", 
+						"--no-sandbox",
+					],
 				},
 				
 				onProgress: (progress) => {
@@ -127,6 +165,10 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
+			// 🔥 ШАГ 3: УБОРКА МУСОРА 🔥
+			if (fs.existsSync(localInputVideoPath)) {
+				fs.unlinkSync(localInputVideoPath);
+			}
 			processQueue();
 		}
 	};
