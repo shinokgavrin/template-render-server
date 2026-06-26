@@ -1,5 +1,27 @@
-import React from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, Video, useCurrentFrame, useVideoConfig } from 'remotion';
+import React, { useEffect, useState } from 'react';
+import { AbsoluteFill, Audio, Img, Sequence, OffthreadVideo, Loop, useCurrentFrame, useVideoConfig } from 'remotion';
+
+// Динамическое разрешение модулей с поддержкой функций задержки рендера (для Canvas)
+const remotionModule = (() => {
+	try {
+		return require('remotion');
+	} catch (e) {
+		return {
+			delayRender: () => 'mock-handle',
+			continueRender: () => {},
+		};
+	}
+})();
+const { delayRender, continueRender } = remotionModule;
+
+const mediaUtilsModule = (() => {
+	try {
+		return require('@remotion/media-utils');
+	} catch (e) {
+		return { getVideoMetadata: async () => ({ durationInSeconds: 2 }) };
+	}
+})();
+const { getVideoMetadata } = mediaUtilsModule;
 
 type Action = {
 	type: string;
@@ -10,6 +32,39 @@ type Action = {
 	max_height?: number;
 };
 
+// 🔥 НОВЫЙ УМНЫЙ КОМПОНЕНТ ДЛЯ ИДЕАЛЬНОГО ЗАЦИКЛИВАНИЯ 🔥
+// Он сам узнает длину исходного видео и зацикливает его без обрывов
+const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
+	const { fps } = useVideoConfig();
+	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
+	const [naturalDuration, setNaturalDuration] = useState<number | null>(null);
+
+	useEffect(() => {
+		getVideoMetadata(src)
+			.then((meta: any) => {
+				// Узнаем точную длину видео-реакции в кадрах
+				const frames = Math.max(1, Math.round(meta.durationInSeconds * fps));
+				setNaturalDuration(frames);
+				continueRender(handle);
+			})
+			.catch((err: any) => {
+				console.warn("Could not get metadata for reaction, using fallback", err);
+				setNaturalDuration(Math.round(fps * 2)); // Запасной вариант - 2 секунды
+				continueRender(handle);
+			});
+	}, [src, fps, handle]);
+
+	if (naturalDuration === null) {
+		return null; // Ждем загрузки метаданных
+	}
+
+	return (
+		<Loop durationInFrames={naturalDuration}>
+			<OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
+		</Loop>
+	);
+};
+
 export const SmirnoffDigest: React.FC<{
 	originalVideoUrl: string;
 	actions: Action[];
@@ -17,7 +72,6 @@ export const SmirnoffDigest: React.FC<{
 	const frame = useCurrentFrame();
 	const { fps } = useVideoConfig();
 	
-	// === ОБРАБОТКА ОШИБОК ===
 	if (!originalVideoUrl) {
 		return (
 			<AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
@@ -30,7 +84,6 @@ export const SmirnoffDigest: React.FC<{
 
 	const currentTime = frame / fps;
 	
-	// Более надежная логика проверки массива с добавлением `?? false`
 	const isMuted = actions?.some(
 		(a) => (a.type === 'mute_title' || a.type === 'mute') && 
 		currentTime >= a.start_time && 
@@ -40,40 +93,38 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ОСНОВНОЕ ВИДЕО (ТОЛЬКО ВИЗУАЛ) === */}
+			{/* === 1. ОСНОВНОЕ ВИДЕО === */}
 			<AbsoluteFill>
-				<Video 
+				<OffthreadVideo 
 					src={originalVideoUrl} 
 					muted={true} 
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-					crossOrigin="anonymous" // Критически важно для стабильного скачивания с Cloudflare
+					crossOrigin="anonymous" 
 				/>
 			</AbsoluteFill>
 
-			{/* === 2. ОРИГИНАЛЬНЫЙ ЗВУК (С НАДЕЖНЫМ MUTE) === */}
-			{/* Отдельный тег Audio гарантирует, что звук не "залипнет" и переключится ровно в нужный кадр */}
+			{/* === 2. ОРИГИНАЛЬНЫЙ ЗВУК === */}
 			<Audio 
 				src={originalVideoUrl} 
 				volume={isMuted ? 0 : 1} 
 			/>
 
-			{/* === 3. НАЛОЖЕНИЯ И АУДИОДОРОЖКИ TTS === */}
+			{/* === 3. НАЛОЖЕНИЯ И АУДИОДОРОЖКИ === */}
 			{actions?.map((action, index) => {
 				const startFrame = Math.round(action.start_time * fps);
+				// durationInFrames здесь - это то, сколько времени оверлей вообще висит на экране (например, 5 секунд)
 				const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
 				if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
 					const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
 					
 					return (
+						// Оверлей висит на экране ровно до end_time
 						<Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
-							<AbsoluteFill style={{ 
-								justifyContent: 'center', 
-								alignItems: 'center',
-								pointerEvents: 'none'
-							}}>
+							<AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
 								{isVideoAsset ? (
-									<Video 
+									// 🔥 Вместо жестких 2 секунд используем наш умный компонент
+									<LoopingReaction 
 										src={action.url} 
 										style={{ 
 											maxWidth: action.max_width || 1080,
@@ -82,7 +133,6 @@ export const SmirnoffDigest: React.FC<{
 											borderRadius: '20px',
 											boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
 										}}
-										crossOrigin="anonymous"
 									/>
 								) : (
 									<Img 
