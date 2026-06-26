@@ -1,25 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, OffthreadVideo, Loop, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, Sequence, OffthreadVideo, Video, Loop, useCurrentFrame, useVideoConfig } from 'remotion';
 
-// Динамическое разрешение модулей с поддержкой функций задержки рендера (для Canvas)
 const remotionModule = (() => {
-	try {
-		return require('remotion');
-	} catch (e) {
-		return {
-			delayRender: () => 'mock-handle',
-			continueRender: () => {},
-		};
-	}
+	try { return require('remotion'); } 
+	catch (e) { return { delayRender: () => 'mock-handle', continueRender: () => {} }; }
 })();
 const { delayRender, continueRender } = remotionModule;
 
 const mediaUtilsModule = (() => {
-	try {
-		return require('@remotion/media-utils');
-	} catch (e) {
-		return { getVideoMetadata: async () => ({ durationInSeconds: 2 }) };
-	}
+	try { return require('@remotion/media-utils'); } 
+	catch (e) { return { getVideoMetadata: async () => ({ durationInSeconds: 2 }) }; }
 })();
 const { getVideoMetadata } = mediaUtilsModule;
 
@@ -32,8 +22,7 @@ type Action = {
 	max_height?: number;
 };
 
-// 🔥 НОВЫЙ УМНЫЙ КОМПОНЕНТ ДЛЯ ИДЕАЛЬНОГО ЗАЦИКЛИВАНИЯ 🔥
-// Он сам узнает длину исходного видео и зацикливает его без обрывов
+// Умный компонент зацикливания мелких реакций (без утечек памяти)
 const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
 	const { fps } = useVideoConfig();
 	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
@@ -42,20 +31,19 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 	useEffect(() => {
 		getVideoMetadata(src)
 			.then((meta: any) => {
-				// Узнаем точную длину видео-реакции в кадрах
 				const frames = Math.max(1, Math.round(meta.durationInSeconds * fps));
 				setNaturalDuration(frames);
 				continueRender(handle);
 			})
 			.catch((err: any) => {
 				console.warn("Could not get metadata for reaction, using fallback", err);
-				setNaturalDuration(Math.round(fps * 2)); // Запасной вариант - 2 секунды
+				setNaturalDuration(Math.round(fps * 2));
 				continueRender(handle);
 			});
 	}, [src, fps, handle]);
 
 	if (naturalDuration === null) {
-		return null; // Ждем загрузки метаданных
+		return null;
 	}
 
 	return (
@@ -94,8 +82,9 @@ export const SmirnoffDigest: React.FC<{
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
 			{/* === 1. ОСНОВНОЕ ВИДЕО === */}
+			{/* Поскольку файл теперь скачан на диск сервера, используем Video. Плавность будет идеальной! */}
 			<AbsoluteFill>
-				<OffthreadVideo 
+				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
@@ -104,26 +93,20 @@ export const SmirnoffDigest: React.FC<{
 			</AbsoluteFill>
 
 			{/* === 2. ОРИГИНАЛЬНЫЙ ЗВУК === */}
-			<Audio 
-				src={originalVideoUrl} 
-				volume={isMuted ? 0 : 1} 
-			/>
+			<Audio src={originalVideoUrl} volume={isMuted ? 0 : 1} />
 
 			{/* === 3. НАЛОЖЕНИЯ И АУДИОДОРОЖКИ === */}
 			{actions?.map((action, index) => {
 				const startFrame = Math.round(action.start_time * fps);
-				// durationInFrames здесь - это то, сколько времени оверлей вообще висит на экране (например, 5 секунд)
 				const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
 				if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
 					const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
 					
 					return (
-						// Оверлей висит на экране ровно до end_time
 						<Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
 							<AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
 								{isVideoAsset ? (
-									// 🔥 Вместо жестких 2 секунд используем наш умный компонент
 									<LoopingReaction 
 										src={action.url} 
 										style={{ 
