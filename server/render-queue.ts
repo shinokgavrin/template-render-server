@@ -73,6 +73,11 @@ export function makeRenderQueue({
 				imageFormat: "jpeg", // Использовать JPEG вместо PNG при извлечении кадров
 				jpegQuality: 80, // Оптимальный баланс памяти и качества
 				
+				// 🔥 ГЛАВНЫЙ ФИКС SIGKILL: Отключаем крошечный лимит /dev/shm (64MB) в Docker/Railway 🔥
+				chromiumOptions: {
+					args: ["--disable-dev-shm-usage", "--no-sandbox"],
+				},
+				
 				onProgress: (progress) => {
 					if (isCancelled) return;
 					job.progress = progress;
