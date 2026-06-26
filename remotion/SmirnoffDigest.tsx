@@ -1,30 +1,5 @@
 import React from 'react';
-
-// Динамическое разрешение модуля для предотвращения ошибок статического анализа в среде предпросмотра
-const remotionModule = (() => {
-	try {
-		const moduleName = 'remotion';
-		return require(moduleName);
-	} catch (e) {
-		// Высококачественный мок-фоллбек для успешной компиляции в Canvas
-		return {
-			AbsoluteFill: ({ children, style }: any) => (
-				<div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, ...style }}>
-					{children}
-				</div>
-			),
-			Audio: () => null,
-			Img: (props: any) => <img {...props} />,
-			Sequence: ({ children }: any) => <>{children}</>,
-			Video: (props: any) => <video {...props} />,
-			OffthreadVideo: (props: any) => <video {...props} />, // Добавлен мок для OffthreadVideo
-			useCurrentFrame: () => 0,
-			useVideoConfig: () => ({ fps: 30 })
-		};
-	}
-})();
-
-const { AbsoluteFill, Audio, Img, Sequence, OffthreadVideo, useCurrentFrame, useVideoConfig } = remotionModule;
+import { AbsoluteFill, Audio, Img, Sequence, Video, useCurrentFrame, useVideoConfig } from 'remotion';
 
 type Action = {
 	type: string;
@@ -43,7 +18,6 @@ export const SmirnoffDigest: React.FC<{
 	const { fps } = useVideoConfig();
 	
 	// === ОБРАБОТКА ОШИБОК ===
-	// Если URL не передан, показываем четкую ошибку вместо тихого сбоя рендера
 	if (!originalVideoUrl) {
 		return (
 			<AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
@@ -54,29 +28,30 @@ export const SmirnoffDigest: React.FC<{
 		);
 	}
 
-	// Вычисляем текущее время в секундах для приглушения фонового звука
 	const currentTime = frame / fps;
 	
-	// Проверяем, попадает ли текущее время в блок "mute" или "mute_title"
+	// Более надежная логика проверки массива с добавлением `?? false`
 	const isMuted = actions?.some(
 		(a) => (a.type === 'mute_title' || a.type === 'mute') && 
 		currentTime >= a.start_time && 
 		currentTime <= a.end_time
-	);
+	) ?? false;
 
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
 			{/* === 1. ОСНОВНОЕ ВИДЕО (ТОЛЬКО ВИЗУАЛ) === */}
 			<AbsoluteFill>
-				<OffthreadVideo 
+				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
-					style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+					crossOrigin="anonymous" // Критически важно для стабильного скачивания с Cloudflare
 				/>
 			</AbsoluteFill>
 
 			{/* === 2. ОРИГИНАЛЬНЫЙ ЗВУК (С НАДЕЖНЫМ MUTE) === */}
+			{/* Отдельный тег Audio гарантирует, что звук не "залипнет" и переключится ровно в нужный кадр */}
 			<Audio 
 				src={originalVideoUrl} 
 				volume={isMuted ? 0 : 1} 
@@ -87,7 +62,6 @@ export const SmirnoffDigest: React.FC<{
 				const startFrame = Math.round(action.start_time * fps);
 				const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
-				// Рендер наложений изображений/GIF/видео
 				if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
 					const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
 					
@@ -99,8 +73,7 @@ export const SmirnoffDigest: React.FC<{
 								pointerEvents: 'none'
 							}}>
 								{isVideoAsset ? (
-									// Заменили обычный Video на OffthreadVideo для надежности наложений!
-									<OffthreadVideo 
+									<Video 
 										src={action.url} 
 										style={{ 
 											maxWidth: action.max_width || 1080,
@@ -108,7 +81,8 @@ export const SmirnoffDigest: React.FC<{
 											objectFit: 'contain',
 											borderRadius: '20px',
 											boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
-										}} 
+										}}
+										crossOrigin="anonymous"
 									/>
 								) : (
 									<Img 
@@ -119,7 +93,8 @@ export const SmirnoffDigest: React.FC<{
 											objectFit: 'contain',
 											borderRadius: '20px',
 											boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
-										}} 
+										}}
+										crossOrigin="anonymous"
 									/>
 								)}
 							</AbsoluteFill>
@@ -127,7 +102,6 @@ export const SmirnoffDigest: React.FC<{
 					);
 				}
 
-				// Рендер аудиодорожек TTS
 				if (action.type === 'mute_title' && action.url) {
 					return (
 						<Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
