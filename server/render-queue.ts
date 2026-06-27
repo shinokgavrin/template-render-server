@@ -85,6 +85,8 @@ export function makeRenderQueue({
 					throw new Error("Video too small or corrupt (< 1MB).");
 				}
 				
+				// I HAVE COMPLETELY REMOVED THE BROKEN FFPROBE/METADATA CHECK HERE
+				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
 				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
 			}
@@ -115,7 +117,7 @@ export function makeRenderQueue({
 						inputProps: job.inputProps,
 						
 						// SAFE & EFFICIENT CORE SETTINGS
-						fps: 30, // Синхронизируем с исходным файлом
+						fps: 30, // Locks composition to match standard source video
 						concurrency: 2, 
 						imageFormat: "jpeg", 
 						jpegQuality: 90, 
@@ -123,7 +125,7 @@ export function makeRenderQueue({
 						// HIGH QUALITY ENCODING
 						crf: 18, 
 						pixelFormat: "yuv420p",
-						videoBitrate: "6000k", // Слегка повышенный битрейт для плавности
+						videoBitrate: "6000k", 
 						
 						chromiumOptions: {
 							args: [
