@@ -26,10 +26,13 @@ export const RemotionRoot: React.FC = () => {
             // Движок сам переходит по ссылке и читает метаданные (длину) видео
             const metadata = await getVideoMetadata(props.originalVideoUrl);
             
+            // 🔥 ФИКС ТРЯСКИ №1: Читаем реальный FPS исходного видео (или берем 30 как запасной)
+            const videoFps = Math.round(metadata.fps) || 30;
+            
             return {
               // Устанавливаем таймлайн ровно кадр-в-кадр с оригинальным видео
-              // (продолжительность в секундах умножаем на 30 кадров в секунду)
-              durationInFrames: Math.ceil(metadata.durationInSeconds * 30),
+              durationInFrames: Math.ceil(metadata.durationInSeconds * videoFps),
+              fps: videoFps, // Динамически подстраиваем FPS всей композиции под оригинал!
               props,
             };
           } catch (err) {
