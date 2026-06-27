@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
 	AbsoluteFill, 
 	Audio, 
 	Img, 
 	Sequence, 
 	Video, 
+	OffthreadVideo, // Возвращаем стабильный рендер для реакций
 	Loop, 
 	useCurrentFrame, 
-	useVideoConfig 
+	useVideoConfig,
+	delayRender,
+	continueRender
 } from 'remotion';
+import { getVideoMetadata } from '@remotion/media-utils';
 
 type Action = {
 	type: string;
@@ -17,6 +21,35 @@ type Action = {
 	url?: string;
 	max_width?: number;
 	max_height?: number;
+};
+
+// --- СТАБИЛЬНЫЕ РЕАКЦИИ С OFFTHREAD VIDEO ---
+const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
+	const { fps } = useVideoConfig();
+	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
+	const [naturalDuration, setNaturalDuration] = useState<number | null>(null);
+
+	useEffect(() => {
+		getVideoMetadata(src)
+			.then((meta) => {
+				setNaturalDuration(Math.max(1, Math.round(meta.durationInSeconds * fps)));
+				continueRender(handle);
+			})
+			.catch((err) => {
+				console.warn("Could not get metadata for reaction", err);
+				setNaturalDuration(Math.round(fps * 2));
+				continueRender(handle);
+			});
+	}, [src, fps, handle]);
+
+	if (naturalDuration === null) return null;
+
+	return (
+		<Loop durationInFrames={naturalDuration}>
+			{/* OffthreadVideo гарантирует, что луп не застрянет на сервере */}
+			<OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
+		</Loop>
+	);
 };
 
 export const SmirnoffDigest: React.FC<{
@@ -29,7 +62,7 @@ export const SmirnoffDigest: React.FC<{
 	if (!originalVideoUrl) {
 		return (
 			<AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
-				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '40px' }}>⚠️ ОШИБКА РЕНДЕРА: Отсутствует ссылка на видео</h1>
+				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '32px' }}>⚠️ ОШИБКА: Missing video URL</h1>
 			</AbsoluteFill>
 		);
 	}
@@ -45,22 +78,22 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ОСНОВНОЕ ВИДЕО (Фиксированный старт и скорость) === */}
+			{/* === 1. ГЛАВНОЕ ВИДЕО (Точный старт) === */}
 			<AbsoluteFill>
 				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
-					startFrom={0} // ← Заставляет браузер сразу начать с первого кадра
-					playbackRate={1}
+					startFrom={0}      // Форсирует чтение с первого кадра (фикс фриза)
+					playbackRate={1}   // Стабилизирует тайминг
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
 					crossOrigin="anonymous" 
 				/>
 			</AbsoluteFill>
 
-			{/* === 2. ОРИГИНАЛЬНЫЙ ЗВУК === */}
+			{/* === 2. ГИБКОЕ АУДИО === */}
 			<Audio src={originalVideoUrl} volume={isMuted ? 0 : 1} />
 
-			{/* === 3. НАЛОЖЕНИЯ И АУДИОДОРОЖКИ === */}
+			{/* === 3. ОВЕРЛЕИ === */}
 			{actions?.map((action, index) => {
 				const startFrame = Math.round(action.start_time * fps);
 				const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
@@ -72,20 +105,16 @@ export const SmirnoffDigest: React.FC<{
 						<Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
 							<AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
 								{isVideoAsset ? (
-									// ← Более легкая реализация для видео и gif-реакций
-									<Loop durationInFrames={durationInFrames}>
-										<Video 
-											src={action.url} 
-											style={{ 
-												maxWidth: action.max_width || 1080,
-												maxHeight: action.max_height || 1350,
-												objectFit: 'contain',
-												borderRadius: '20px',
-												boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
-											}}
-											crossOrigin="anonymous"
-										/>
-									</Loop>
+									<LoopingReaction 
+										src={action.url} 
+										style={{ 
+											maxWidth: action.max_width || 1080,
+											maxHeight: action.max_height || 1350,
+											objectFit: 'contain',
+											borderRadius: '20px',
+											boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
+										}}
+									/>
 								) : (
 									<Img 
 										src={action.url} 
