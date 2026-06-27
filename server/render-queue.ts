@@ -5,8 +5,8 @@ import fs from "node:fs";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import https from "node:https";
 import http from "node:http";
+import { getVideoMetadata } from "@remotion/media-utils"; // Добавляем импорт для проверки файла
 
-// Download helper to safely move large files to the local SSD
 function downloadFileToDisk(url: string, dest: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const file = fs.createWriteStream(dest);
@@ -75,8 +75,7 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
-			// --- STEP 1: LOCALIZATION ---
-			// Download huge video to SSD to prevent network I/O throttling
+			// --- ЛОКАЛИЗАЦИЯ И ПРОВЕРКА ЦЕЛОСТНОСТИ ФАЙЛА ---
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -84,7 +83,13 @@ export function makeRenderQueue({
 				
 				const stats = fs.statSync(localInputVideoPath);
 				if (stats.size < 1024 * 1024) { 
-					throw new Error("Downloaded video is suspiciously small (< 1MB). Link might be broken.");
+					throw new Error("Video too small or corrupt");
+				}
+
+				// Проверяем, что FFMPEG может прочитать этот файл (Защита от 10-секундного фриза)
+				const probe = await getVideoMetadata(localInputVideoPath).catch(() => null);
+				if (!probe || !probe.durationInSeconds || probe.durationInSeconds < 5) {
+					throw new Error("Video duration invalid or metadata broken");
 				}
 				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
@@ -102,7 +107,7 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
-			// --- STEP 2: RENDER WITH WATCHDOG ---
+			// --- РЕНДЕР С ОПТИМАЛЬНЫМ БАЛАНСОМ ---
 			await new Promise(async (resolve, reject) => {
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
@@ -116,19 +121,24 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// --- SAFE COMMERCIAL SETTINGS ---
-						concurrency: 2, // Balances render speed and server stability (prevents CPU starvation)
+						// БЕЗОПАСНЫЕ И ЭФФЕКТИВНЫЕ НАСТРОЙКИ
+						concurrency: 2, 
 						imageFormat: "jpeg", 
-						jpegQuality: 80, 
+						jpegQuality: 90, 
+						
+						// КАЧЕСТВО КОДИРОВАНИЯ
+						crf: 18, 
+						pixelFormat: "yuv420p",
+						videoBitrate: "6000k", // Слегка повышаем битрейт для плавности
 						
 						chromiumOptions: {
 							args: [
-								"--disable-dev-shm-usage", // CRITICAL: Prevents Docker 64MB RAM limit crashes
+								"--disable-dev-shm-usage", 
 								"--no-sandbox",
 								"--disable-setuid-sandbox",
-								"--disable-gpu", // CRITICAL: Fixes the 10-second startup freeze on headless servers
-								"--disable-software-rasterizer", // Forces smooth linear CPU decoding
-								"--disable-web-security" // Extra fallback for CORS issues
+								"--disable-gpu", 
+								"--disable-software-rasterizer", 
+								"--disable-web-security" 
 							],
 						},
 						
@@ -143,7 +153,6 @@ export function makeRenderQueue({
 							
 							job.progress = progress;
 							
-							// Reset watchdog on every successful frame
 							clearTimeout(watchdogTimer);
 							watchdogTimer = setTimeout(() => {
 								reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
@@ -159,7 +168,7 @@ export function makeRenderQueue({
 				}
 			});
 
-			// --- STEP 3: CLOUDFLARE R2 UPLOAD ---
+			// --- ЗАГРУЗКА В CLOUDFLARE R2 ---
 			if (!isCancelled) {
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
@@ -203,9 +212,6 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
-			
-			// --- STEP 4: GARBAGE COLLECTION ---
-			// Delete the 1GB input file from the SSD so your server doesn't run out of space
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
