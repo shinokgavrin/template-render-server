@@ -1,17 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, OffthreadVideo, Video, Loop, useCurrentFrame, useVideoConfig } from 'remotion';
-
-const remotionModule = (() => {
-	try { return require('remotion'); } 
-	catch (e) { return { delayRender: () => 'mock-handle', continueRender: () => {} }; }
-})();
-const { delayRender, continueRender } = remotionModule;
-
-const mediaUtilsModule = (() => {
-	try { return require('@remotion/media-utils'); } 
-	catch (e) { return { getVideoMetadata: async () => ({ durationInSeconds: 2 }) }; }
-})();
-const { getVideoMetadata } = mediaUtilsModule;
+import React from 'react';
+import { 
+	AbsoluteFill, 
+	Audio, 
+	Img, 
+	Sequence, 
+	Video, 
+	Loop, 
+	useCurrentFrame, 
+	useVideoConfig 
+} from 'remotion';
 
 type Action = {
 	type: string;
@@ -20,35 +17,6 @@ type Action = {
 	url?: string;
 	max_width?: number;
 	max_height?: number;
-};
-
-// Мелкие реакции. Здесь OffthreadVideo нужен, чтобы видео не зависали как фото.
-const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
-	const { fps } = useVideoConfig();
-	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
-	const [naturalDuration, setNaturalDuration] = useState<number | null>(null);
-
-	useEffect(() => {
-		getVideoMetadata(src)
-			.then((meta: any) => {
-				const frames = Math.max(1, Math.round(meta.durationInSeconds * fps));
-				setNaturalDuration(frames);
-				continueRender(handle);
-			})
-			.catch((err: any) => {
-				console.warn("Could not get metadata for reaction", err);
-				setNaturalDuration(Math.round(fps * 2));
-				continueRender(handle);
-			});
-	}, [src, fps, handle]);
-
-	if (naturalDuration === null) return null;
-
-	return (
-		<Loop durationInFrames={naturalDuration}>
-			<OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
-		</Loop>
-	);
 };
 
 export const SmirnoffDigest: React.FC<{
@@ -61,7 +29,7 @@ export const SmirnoffDigest: React.FC<{
 	if (!originalVideoUrl) {
 		return (
 			<AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
-				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '40px' }}>⚠️ ОШИБКА РЕНДЕРА</h1>
+				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '40px' }}>⚠️ ОШИБКА РЕНДЕРА: Отсутствует ссылка на видео</h1>
 			</AbsoluteFill>
 		);
 	}
@@ -77,12 +45,13 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ОСНОВНОЕ ВИДЕО (СТАНДАРТНЫЙ <Video>) === */}
-			{/* Использует 0% RAM для кэширования кадров, читая их напрямую с SSD сервера */}
+			{/* === 1. ОСНОВНОЕ ВИДЕО (Фиксированный старт и скорость) === */}
 			<AbsoluteFill>
 				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
+					startFrom={0} // ← Заставляет браузер сразу начать с первого кадра
+					playbackRate={1}
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
 					crossOrigin="anonymous" 
 				/>
@@ -103,16 +72,20 @@ export const SmirnoffDigest: React.FC<{
 						<Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
 							<AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
 								{isVideoAsset ? (
-									<LoopingReaction 
-										src={action.url} 
-										style={{ 
-											maxWidth: action.max_width || 1080,
-											maxHeight: action.max_height || 1350,
-											objectFit: 'contain',
-											borderRadius: '20px',
-											boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
-										}}
-									/>
+									// ← Более легкая реализация для видео и gif-реакций
+									<Loop durationInFrames={durationInFrames}>
+										<Video 
+											src={action.url} 
+											style={{ 
+												maxWidth: action.max_width || 1080,
+												maxHeight: action.max_height || 1350,
+												objectFit: 'contain',
+												borderRadius: '20px',
+												boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
+											}}
+											crossOrigin="anonymous"
+										/>
+									</Loop>
 								) : (
 									<Img 
 										src={action.url} 
