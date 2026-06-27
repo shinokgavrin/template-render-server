@@ -89,13 +89,10 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ГЛАВНОЕ ВИДЕО (Точный старт) === */}
+			{/* === 1. ГЛАВНОЕ ВИДЕО (OffthreadVideo для идеальной плавности) === */}
 			<AbsoluteFill>
-				<Video 
+				<OffthreadVideo 
 					src={originalVideoUrl} 
-					muted={true} 
-					startFrom={0}      // Форсирует чтение с первого кадра (фикс 10-секундного фриза)
-					playbackRate={1}   // Стабилизирует тайминг
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
 					crossOrigin="anonymous" 
 				/>
