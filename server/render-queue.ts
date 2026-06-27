@@ -85,8 +85,6 @@ export function makeRenderQueue({
 					throw new Error("Video too small or corrupt (< 1MB).");
 				}
 				
-				// I HAVE COMPLETELY REMOVED THE BROKEN FFPROBE/METADATA CHECK HERE
-				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
 				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
 			}
@@ -125,7 +123,7 @@ export function makeRenderQueue({
 						// HIGH QUALITY ENCODING
 						crf: 18, 
 						pixelFormat: "yuv420p",
-						videoBitrate: "6000k", 
+						// УДАЛЕНО: videoBitrate (вызывает конфликт с crf)
 						
 						chromiumOptions: {
 							args: [
