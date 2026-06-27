@@ -57,7 +57,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 
 	return (
 		<Loop durationInFrames={naturalDuration}>
-			{/* OffthreadVideo гарантирует железобетонный луп без пропуска кадров на сервере */}
+			{/* OffthreadVideo гарантирует железобетонный луп без пропуска кадров на сервере для КОРОТКИХ роликов */}
 			<OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
 		</Loop>
 	);
@@ -89,10 +89,11 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ГЛАВНОЕ ВИДЕО (OffthreadVideo для идеальной плавности) === */}
+			{/* === 1. ГЛАВНОЕ ВИДЕО (Стандартный Video спасает сервер от переполнения памяти) === */}
 			<AbsoluteFill>
-				<OffthreadVideo 
+				<Video 
 					src={originalVideoUrl} 
+					muted={true} // Обязательно глушим, так как звук идет отдельным тегом ниже
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
 					crossOrigin="anonymous" 
 				/>
