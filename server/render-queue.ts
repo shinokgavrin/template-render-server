@@ -74,15 +74,13 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
-			// 🔥 УРОВЕНЬ ЗАЩИТЫ 1: Проверка скачанного файла
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
 				await downloadFileToDisk(originalUrl, localInputVideoPath);
 				
-				// Проверяем, не скачалась ли пустышка
 				const stats = fs.statSync(localInputVideoPath);
-				if (stats.size < 1024 * 1024) { // Меньше 1 МБ
+				if (stats.size < 1024 * 1024) { 
 					throw new Error("Downloaded video is suspiciously small (< 1MB). The download failed or link is broken.");
 				}
 				
@@ -101,9 +99,7 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
-			// 🔥 УРОВЕНЬ ЗАЩИТЫ 2 & 3: Watchdog + Анализ логов
 			await new Promise(async (resolve, reject) => {
-				// Сторожевой таймер: убьет рендер, если кадры не двигаются 3 минуты
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
 				}, 3 * 60 * 1000);
@@ -115,18 +111,20 @@ export function makeRenderQueue({
 						codec: "h264",
 						outputLocation: outPath,
 						inputProps: job.inputProps,
-						concurrency: 1, 
+						
+						// 🔥 СНИМАЕМ ОГРАНИЧИТЕЛИ СКОРОСТИ 🔥
+						// Убрали concurrency: 1. Теперь Remotion задействует все ядра вашего сервера (многопоточность)!
 						imageFormat: "jpeg", 
 						jpegQuality: 80,
 						
 						chromiumOptions: {
 							args: [
-								"--disable-dev-shm-usage", 
+								"--disable-dev-shm-usage", // Это оставляем обязательно для защиты от SIGKILL
 								"--no-sandbox",
+								// Убрали --disable-gpu и прочий "ручной тормоз". Серверу можно дышать полной грудью!
 							],
 						},
 						
-						// Перехватчик: Если плеер ругается на CORS или недоступность файла - убиваем сразу!
 						onBrowserLog: (log) => {
 							if (log.type === 'error' && (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::'))) {
 								reject(new Error(`Chromium Fatal Error Detected: ${log.text}`));
@@ -138,7 +136,6 @@ export function makeRenderQueue({
 							
 							job.progress = progress;
 							
-							// Если кадр успешно отрендерился, сбрасываем таймер и даем еще 3 минуты
 							clearTimeout(watchdogTimer);
 							watchdogTimer = setTimeout(() => {
 								reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
@@ -146,7 +143,7 @@ export function makeRenderQueue({
 						},
 					});
 					
-					clearTimeout(watchdogTimer); // Очищаем таймер при успехе
+					clearTimeout(watchdogTimer); 
 					resolve(true);
 				} catch (err) {
 					clearTimeout(watchdogTimer);
@@ -192,13 +189,11 @@ export function makeRenderQueue({
 				}
 			}
 		} catch (err: any) {
-			// Любая ошибка из Watchdog'a, перехватчика или скачивания попадет сюда
 			job.status = "failed";
 			job.error = err.message || String(err);
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
-			// Уборка мусора
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
