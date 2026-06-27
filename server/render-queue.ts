@@ -81,7 +81,7 @@ export function makeRenderQueue({
 				
 				const stats = fs.statSync(localInputVideoPath);
 				if (stats.size < 1024 * 1024) { 
-					throw new Error("Downloaded video is suspiciously small (< 1MB). The download failed or link is broken.");
+					throw new Error("Downloaded video is suspiciously small (< 1MB).");
 				}
 				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
@@ -112,16 +112,15 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// 🔥 СНИМАЕМ ОГРАНИЧИТЕЛИ СКОРОСТИ 🔥
-						// Убрали concurrency: 1. Теперь Remotion задействует все ядра вашего сервера (многопоточность)!
+						// 🔥 ФИКС ТРЯСКИ №2: Идеальное последовательное коммерческое декодирование H.264
+						concurrency: 1, // Строго 1 поток. Убирает хаотичные прыжки FFMPEG по гигабайтному файлу!
 						imageFormat: "jpeg", 
-						jpegQuality: 80,
+						jpegQuality: 100, // 100% максимальное качество кадров без артефактов сжатия
 						
 						chromiumOptions: {
 							args: [
-								"--disable-dev-shm-usage", // Это оставляем обязательно для защиты от SIGKILL
+								"--disable-dev-shm-usage", 
 								"--no-sandbox",
-								// Убрали --disable-gpu и прочий "ручной тормоз". Серверу можно дышать полной грудью!
 							],
 						},
 						
