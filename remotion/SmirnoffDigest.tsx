@@ -5,7 +5,7 @@ import {
 	Img, 
 	Sequence, 
 	Video, 
-	OffthreadVideo, // Возвращаем стабильный рендер для реакций
+	OffthreadVideo, 
 	Loop, 
 	useCurrentFrame, 
 	useVideoConfig,
@@ -23,21 +23,32 @@ type Action = {
 	max_height?: number;
 };
 
-// --- СТАБИЛЬНЫЕ РЕАКЦИИ С OFFTHREAD VIDEO ---
+// --- СТАБИЛЬНЫЕ РЕАКЦИИ С ТАЙМАУТОМ ---
+// Извлекает точную длину реакции. Если метаданные не скачались за 5 секунд — луп не зависает!
 const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
 	const { fps } = useVideoConfig();
 	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
 	const [naturalDuration, setNaturalDuration] = useState<number | null>(null);
 
 	useEffect(() => {
+		// Предохранитель: принудительный старт через 5 секунд, если сеть тормозит
+		const timeout = setTimeout(() => {
+			console.warn(`Metadata timeout for ${src}, using 5s fallback`);
+			setNaturalDuration(Math.round(fps * 5));
+			continueRender(handle);
+		}, 5000);
+
 		getVideoMetadata(src)
 			.then((meta) => {
-				setNaturalDuration(Math.max(1, Math.round(meta.durationInSeconds * fps)));
+				clearTimeout(timeout);
+				const duration = Math.max(1, Math.round(meta.durationInSeconds * fps));
+				setNaturalDuration(duration);
 				continueRender(handle);
 			})
 			.catch((err) => {
+				clearTimeout(timeout);
 				console.warn("Could not get metadata for reaction", err);
-				setNaturalDuration(Math.round(fps * 2));
+				setNaturalDuration(Math.round(fps * 5));
 				continueRender(handle);
 			});
 	}, [src, fps, handle]);
@@ -46,7 +57,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 
 	return (
 		<Loop durationInFrames={naturalDuration}>
-			{/* OffthreadVideo гарантирует, что луп не застрянет на сервере */}
+			{/* OffthreadVideo гарантирует железобетонный луп без пропуска кадров на сервере */}
 			<OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
 		</Loop>
 	);
@@ -83,7 +94,7 @@ export const SmirnoffDigest: React.FC<{
 				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
-					startFrom={0}      // Форсирует чтение с первого кадра (фикс фриза)
+					startFrom={0}      // Форсирует чтение с первого кадра (фикс 10-секундного фриза)
 					playbackRate={1}   // Стабилизирует тайминг
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
 					crossOrigin="anonymous" 
@@ -93,7 +104,7 @@ export const SmirnoffDigest: React.FC<{
 			{/* === 2. ГИБКОЕ АУДИО === */}
 			<Audio src={originalVideoUrl} volume={isMuted ? 0 : 1} />
 
-			{/* === 3. ОВЕРЛЕИ === */}
+			{/* === 3. ОВЕРЛЕИ И РЕАКЦИИ === */}
 			{actions?.map((action, index) => {
 				const startFrame = Math.round(action.start_time * fps);
 				const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
