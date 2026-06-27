@@ -74,6 +74,7 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
+			// 🔥 ШАГ 1: Скачивание тяжелого видео на SSD
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -99,6 +100,7 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
+			// 🔥 ШАГ 2: Безопасный рендер с Watchdog-таймером
 			await new Promise(async (resolve, reject) => {
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
@@ -112,15 +114,17 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// 🔥 ФИКС ТРЯСКИ №2: Идеальное последовательное коммерческое декодирование H.264
-						concurrency: 1, // Строго 1 поток. Убирает хаотичные прыжки FFMPEG по гигабайтному файлу!
+						// 🔥 ЗОЛОТАЯ СЕРЕДИНА (КОММЕРЧЕСКОЕ КАЧЕСТВО) 🔥
+						concurrency: 2, // 2 потока на рендер, 2 ядра свободны для стабильной отдачи файла сервером Express
 						imageFormat: "jpeg", 
-						jpegQuality: 100, // 100% максимальное качество кадров без артефактов сжатия
+						jpegQuality: 80, 
 						
 						chromiumOptions: {
 							args: [
 								"--disable-dev-shm-usage", 
 								"--no-sandbox",
+								"--disable-gpu", // Запрещаем глючную эмуляцию видеокарты
+								"--disable-software-rasterizer" // Переводим декодирование H.264 строго на CPU
 							],
 						},
 						
@@ -135,6 +139,7 @@ export function makeRenderQueue({
 							
 							job.progress = progress;
 							
+							// Обнуляем таймер при каждом успешном кадре
 							clearTimeout(watchdogTimer);
 							watchdogTimer = setTimeout(() => {
 								reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
@@ -150,6 +155,7 @@ export function makeRenderQueue({
 				}
 			});
 
+			// 🔥 ШАГ 3: Загрузка в R2 Bucket
 			if (!isCancelled) {
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
@@ -193,6 +199,7 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
+			// 🔥 ШАГ 4: Уборка мусора (Очистка локального SSD от исходника)
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
