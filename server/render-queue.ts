@@ -5,7 +5,6 @@ import fs from "node:fs";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import https from "node:https";
 import http from "node:http";
-import { getVideoMetadata } from "@remotion/media-utils"; 
 
 function downloadFileToDisk(url: string, dest: string): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -85,12 +84,6 @@ export function makeRenderQueue({
 				if (stats.size < 1024 * 1024) { 
 					throw new Error("Video too small or corrupt (< 1MB).");
 				}
-
-				// Verify FFmpeg can read it to catch broken metadata (Prevents the 10-second freeze)
-				const probe = await getVideoMetadata(localInputVideoPath).catch(() => null);
-				if (!probe || !probe.durationInSeconds || probe.durationInSeconds < 5) {
-					throw new Error("Video duration invalid or metadata broken");
-				}
 				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
 				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
@@ -122,7 +115,7 @@ export function makeRenderQueue({
 						inputProps: job.inputProps,
 						
 						// SAFE & EFFICIENT CORE SETTINGS
-						fps: 30, // Locks composition to match standard source video
+						fps: 30, // Синхронизируем с исходным файлом
 						concurrency: 2, 
 						imageFormat: "jpeg", 
 						jpegQuality: 90, 
@@ -130,7 +123,7 @@ export function makeRenderQueue({
 						// HIGH QUALITY ENCODING
 						crf: 18, 
 						pixelFormat: "yuv420p",
-						videoBitrate: "6000k", // Mildly elevated for smoother playback
+						videoBitrate: "6000k", // Слегка повышенный битрейт для плавности
 						
 						chromiumOptions: {
 							args: [
