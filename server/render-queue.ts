@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import https from "node:https";
 import http from "node:http";
-import { getVideoMetadata } from "@remotion/media-utils"; // Добавляем импорт для проверки файла
+import { getVideoMetadata } from "@remotion/media-utils"; 
 
 function downloadFileToDisk(url: string, dest: string): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -75,7 +75,7 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
-			// --- ЛОКАЛИЗАЦИЯ И ПРОВЕРКА ЦЕЛОСТНОСТИ ФАЙЛА ---
+			// --- STEP 1: LOCALIZATION & INTEGRITY CHECK ---
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -83,10 +83,10 @@ export function makeRenderQueue({
 				
 				const stats = fs.statSync(localInputVideoPath);
 				if (stats.size < 1024 * 1024) { 
-					throw new Error("Video too small or corrupt");
+					throw new Error("Video too small or corrupt (< 1MB).");
 				}
 
-				// Проверяем, что FFMPEG может прочитать этот файл (Защита от 10-секундного фриза)
+				// Verify FFmpeg can read it to catch broken metadata (Prevents the 10-second freeze)
 				const probe = await getVideoMetadata(localInputVideoPath).catch(() => null);
 				if (!probe || !probe.durationInSeconds || probe.durationInSeconds < 5) {
 					throw new Error("Video duration invalid or metadata broken");
@@ -107,7 +107,7 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
-			// --- РЕНДЕР С ОПТИМАЛЬНЫМ БАЛАНСОМ ---
+			// --- STEP 2: RENDER WITH OPTIMIZED BALANCE ---
 			await new Promise(async (resolve, reject) => {
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
@@ -121,15 +121,16 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// БЕЗОПАСНЫЕ И ЭФФЕКТИВНЫЕ НАСТРОЙКИ
+						// SAFE & EFFICIENT CORE SETTINGS
+						fps: 30, // Locks composition to match standard source video
 						concurrency: 2, 
 						imageFormat: "jpeg", 
 						jpegQuality: 90, 
 						
-						// КАЧЕСТВО КОДИРОВАНИЯ
+						// HIGH QUALITY ENCODING
 						crf: 18, 
 						pixelFormat: "yuv420p",
-						videoBitrate: "6000k", // Слегка повышаем битрейт для плавности
+						videoBitrate: "6000k", // Mildly elevated for smoother playback
 						
 						chromiumOptions: {
 							args: [
@@ -168,7 +169,7 @@ export function makeRenderQueue({
 				}
 			});
 
-			// --- ЗАГРУЗКА В CLOUDFLARE R2 ---
+			// --- STEP 3: CLOUDFLARE R2 UPLOAD ---
 			if (!isCancelled) {
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
@@ -212,6 +213,7 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
+			// --- STEP 4: GARBAGE COLLECTION ---
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
