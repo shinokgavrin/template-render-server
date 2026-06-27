@@ -74,7 +74,6 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
-			// --- STEP 1: LOCALIZATION & INTEGRITY CHECK ---
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -82,13 +81,14 @@ export function makeRenderQueue({
 				
 				const stats = fs.statSync(localInputVideoPath);
 				if (stats.size < 1024 * 1024) { 
-					throw new Error("Video too small or corrupt (< 1MB).");
+					throw new Error("Downloaded video is suspiciously small (< 1MB). The download failed or link is broken.");
 				}
 				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
 				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
 			}
 
+			// Здесь selectComposition загружает метаданные из Root.tsx и выставляет composition.fps = 25
 			const composition = await selectComposition({
 				serveUrl,
 				id: job.composition,
@@ -100,7 +100,6 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
-			// --- STEP 2: RENDER WITH OPTIMIZED BALANCE ---
 			await new Promise(async (resolve, reject) => {
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
@@ -114,25 +113,21 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// SAFE & EFFICIENT CORE SETTINGS
-						fps: 30, // Locks composition to match standard source video
-						concurrency: 2, 
-						imageFormat: "jpeg", 
-						jpegQuality: 90, 
+						// 🔥 ГЛАВНЫЙ ФИКС: Используем динамический FPS (25), а не жесткие 30 🔥
+						fps: composition.fps, 
 						
-						// HIGH QUALITY ENCODING
-						crf: 18, 
+						concurrency: 1, // Оставляем 1 поток для линейного декодирования кадров друг за другом
+						imageFormat: "jpeg", 
+						jpegQuality: 100, 
+						
+						// Настройки высокого качества
+						crf: 18,
 						pixelFormat: "yuv420p",
-						// УДАЛЕНО: videoBitrate (вызывает конфликт с crf)
 						
 						chromiumOptions: {
 							args: [
-								"--disable-dev-shm-usage", 
+								"--disable-dev-shm-usage",
 								"--no-sandbox",
-								"--disable-setuid-sandbox",
-								"--disable-gpu", 
-								"--disable-software-rasterizer", 
-								"--disable-web-security" 
 							],
 						},
 						
@@ -162,7 +157,6 @@ export function makeRenderQueue({
 				}
 			});
 
-			// --- STEP 3: CLOUDFLARE R2 UPLOAD ---
 			if (!isCancelled) {
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
@@ -206,7 +200,6 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
-			// --- STEP 4: GARBAGE COLLECTION ---
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
