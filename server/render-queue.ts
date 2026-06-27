@@ -6,7 +6,6 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import https from "node:https";
 import http from "node:http";
 
-// 🔥 Функция для безопасного скачивания файла сразу на жесткий диск (0% RAM)
 function downloadFileToDisk(url: string, dest: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const file = fs.createWriteStream(dest);
@@ -15,6 +14,9 @@ function downloadFileToDisk(url: string, dest: string): Promise<void> {
 		client.get(url, (response) => {
 			if (response.statusCode === 301 || response.statusCode === 302) {
 				return downloadFileToDisk(response.headers.location!, dest).then(resolve).catch(reject);
+			}
+			if (response.statusCode !== 200) {
+				return reject(new Error(`Download failed with status ${response.statusCode}`));
 			}
 			response.pipe(file);
 			file.on("finish", () => {
@@ -72,15 +74,20 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
-			// 🔥 ШАГ 1: ЛОКАЛИЗАЦИЯ ТЯЖЕЛОГО ВИДЕО 🔥
+			// 🔥 УРОВЕНЬ ЗАЩИТЫ 1: Проверка скачанного файла
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
 				await downloadFileToDisk(originalUrl, localInputVideoPath);
 				
-				// Подменяем ссылку на локальный сервер (Remotion будет читать с диска)
+				// Проверяем, не скачалась ли пустышка
+				const stats = fs.statSync(localInputVideoPath);
+				if (stats.size < 1024 * 1024) { // Меньше 1 МБ
+					throw new Error("Downloaded video is suspiciously small (< 1MB). The download failed or link is broken.");
+				}
+				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
-				console.log(`[Localizer] Download complete! Using local URL for perfect smooth rendering.`);
+				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
 			}
 
 			const composition = await selectComposition({
@@ -92,34 +99,59 @@ export function makeRenderQueue({
 			let isCancelled = false;
 			job.cancel = () => {
 				isCancelled = true;
-				job.status = "failed";
-				job.error = "Render cancelled by user";
 			};
 
-			// 🔥 ШАГ 2: БЕЗОПАСНЫЙ РЕНДЕР 🔥
-			await renderMedia({
-				composition,
-				serveUrl,
-				codec: "h264",
-				outputLocation: outPath,
-				inputProps: job.inputProps,
-				
-				concurrency: 1, 
-				imageFormat: "jpeg", 
-				jpegQuality: 80,
-				timeoutInMilliseconds: 3600000, 
-				
-				chromiumOptions: {
-					args: [
-						"--disable-dev-shm-usage", 
-						"--no-sandbox",
-					],
-				},
-				
-				onProgress: (progress) => {
-					if (isCancelled) return;
-					job.progress = progress;
-				},
+			// 🔥 УРОВЕНЬ ЗАЩИТЫ 2 & 3: Watchdog + Анализ логов
+			await new Promise(async (resolve, reject) => {
+				// Сторожевой таймер: убьет рендер, если кадры не двигаются 3 минуты
+				let watchdogTimer = setTimeout(() => {
+					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
+				}, 3 * 60 * 1000);
+
+				try {
+					await renderMedia({
+						composition,
+						serveUrl,
+						codec: "h264",
+						outputLocation: outPath,
+						inputProps: job.inputProps,
+						concurrency: 1, 
+						imageFormat: "jpeg", 
+						jpegQuality: 80,
+						
+						chromiumOptions: {
+							args: [
+								"--disable-dev-shm-usage", 
+								"--no-sandbox",
+							],
+						},
+						
+						// Перехватчик: Если плеер ругается на CORS или недоступность файла - убиваем сразу!
+						onBrowserLog: (log) => {
+							if (log.type === 'error' && (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::'))) {
+								reject(new Error(`Chromium Fatal Error Detected: ${log.text}`));
+							}
+						},
+						
+						onProgress: (progress) => {
+							if (isCancelled) return reject(new Error("Render cancelled by user"));
+							
+							job.progress = progress;
+							
+							// Если кадр успешно отрендерился, сбрасываем таймер и даем еще 3 минуты
+							clearTimeout(watchdogTimer);
+							watchdogTimer = setTimeout(() => {
+								reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
+							}, 3 * 60 * 1000);
+						},
+					});
+					
+					clearTimeout(watchdogTimer); // Очищаем таймер при успехе
+					resolve(true);
+				} catch (err) {
+					clearTimeout(watchdogTimer);
+					reject(err);
+				}
 			});
 
 			if (!isCancelled) {
@@ -160,12 +192,13 @@ export function makeRenderQueue({
 				}
 			}
 		} catch (err: any) {
+			// Любая ошибка из Watchdog'a, перехватчика или скачивания попадет сюда
 			job.status = "failed";
 			job.error = err.message || String(err);
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
-			// 🔥 ШАГ 3: УБОРКА МУСОРА 🔥
+			// Уборка мусора
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
