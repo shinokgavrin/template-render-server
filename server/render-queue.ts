@@ -88,7 +88,7 @@ export function makeRenderQueue({
 				console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
 			}
 
-			// Здесь selectComposition загружает метаданные из Root.tsx и выставляет composition.fps = 25
+			// Здесь selectComposition загружает метаданные из Root.tsx и выставляет правильный composition.fps (например, 25)
 			const composition = await selectComposition({
 				serveUrl,
 				id: job.composition,
@@ -113,12 +113,14 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// 🔥 ГЛАВНЫЙ ФИКС: Используем динамический FPS (25), а не жесткие 30 🔥
+						// Динамический FPS (защита от дублирования кадров)
 						fps: composition.fps, 
 						
-						concurrency: 1, // Оставляем 1 поток для линейного декодирования кадров друг за другом
+						// Линейное декодирование
+						concurrency: 1, 
+						
 						imageFormat: "jpeg", 
-						jpegQuality: 100, 
+						jpegQuality: 90, // Защита от I/O Bottleneck
 						
 						// Настройки высокого качества
 						crf: 18,
@@ -128,6 +130,16 @@ export function makeRenderQueue({
 							args: [
 								"--disable-dev-shm-usage",
 								"--no-sandbox",
+								"--disable-setuid-sandbox",
+								"--disable-gpu",
+								"--disable-software-rasterizer",
+								"--disable-accelerated-video-decode",
+								"--disable-web-security",
+								
+								// 🔥 СЕКРЕТНОЕ ОРУЖИЕ ИЗ ФИДБЕКА: БУФЕРИЗАЦИЯ И МНОГОПОТОЧНОЕ ДЕКОДИРОВАНИЕ 🔥
+								"--video-buffer-size-mb=512", // Даем браузеру 512МБ оперативки чисто под кэширование кадров!
+								"--enable-features=OffthreadVideoDecode", // Заставляем Chromium читать эти кадры в отдельном изолированном потоке
+								"--disable-blink-features=AutomationControlled"
 							],
 						},
 						
