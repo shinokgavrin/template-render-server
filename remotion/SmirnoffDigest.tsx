@@ -82,9 +82,10 @@ export const SmirnoffDigest: React.FC<{
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
 			{/* === 1. ОСНОВНОЕ ВИДЕО === */}
-			{/* Поскольку файл теперь скачан на диск сервера, используем Video. Плавность будет идеальной! */}
+			{/* Поскольку файл теперь скачан на диск сервера, используем OffthreadVideo. 
+			    Он обеспечит 100% покадровую точность через FFMPEG без "тряски" и рывков! */}
 			<AbsoluteFill>
-				<Video 
+				<OffthreadVideo 
 					src={originalVideoUrl} 
 					muted={true} 
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
