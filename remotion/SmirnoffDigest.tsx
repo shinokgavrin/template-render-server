@@ -22,7 +22,7 @@ type Action = {
 	max_height?: number;
 };
 
-// Умный компонент зацикливания мелких реакций (без утечек памяти)
+// Мелкие реакции. Здесь OffthreadVideo нужен, чтобы видео не зависали как фото.
 const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
 	const { fps } = useVideoConfig();
 	const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
@@ -36,15 +36,13 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 				continueRender(handle);
 			})
 			.catch((err: any) => {
-				console.warn("Could not get metadata for reaction, using fallback", err);
+				console.warn("Could not get metadata for reaction", err);
 				setNaturalDuration(Math.round(fps * 2));
 				continueRender(handle);
 			});
 	}, [src, fps, handle]);
 
-	if (naturalDuration === null) {
-		return null;
-	}
+	if (naturalDuration === null) return null;
 
 	return (
 		<Loop durationInFrames={naturalDuration}>
@@ -63,9 +61,7 @@ export const SmirnoffDigest: React.FC<{
 	if (!originalVideoUrl) {
 		return (
 			<AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
-				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '40px' }}>
-					⚠️ ОШИБКА РЕНДЕРА: originalVideoUrl пуст!
-				</h1>
+				<h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '40px' }}>⚠️ ОШИБКА РЕНДЕРА</h1>
 			</AbsoluteFill>
 		);
 	}
@@ -81,11 +77,10 @@ export const SmirnoffDigest: React.FC<{
 	return (
 		<AbsoluteFill style={{ backgroundColor: 'black' }}>
 			
-			{/* === 1. ОСНОВНОЕ ВИДЕО === */}
-			{/* Поскольку файл теперь скачан на диск сервера, используем OffthreadVideo. 
-			    Он обеспечит 100% покадровую точность через FFMPEG без "тряски" и рывков! */}
+			{/* === 1. ОСНОВНОЕ ВИДЕО (СТАНДАРТНЫЙ <Video>) === */}
+			{/* Использует 0% RAM для кэширования кадров, читая их напрямую с SSD сервера */}
 			<AbsoluteFill>
-				<OffthreadVideo 
+				<Video 
 					src={originalVideoUrl} 
 					muted={true} 
 					style={{ width: '100%', height: '100%', objectFit: 'contain' }}
