@@ -6,6 +6,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import https from "node:https";
 import http from "node:http";
 
+// Download helper to safely move large files to the local SSD
 function downloadFileToDisk(url: string, dest: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const file = fs.createWriteStream(dest);
@@ -74,6 +75,8 @@ export function makeRenderQueue({
 		const outPath = path.join(rendersDir, `${jobId}.mp4`);
 
 		try {
+			// --- STEP 1: LOCALIZATION ---
+			// Download huge video to SSD to prevent network I/O throttling
 			let originalUrl = job.inputProps.originalVideoUrl;
 			if (originalUrl && originalUrl.startsWith("http")) {
 				console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -81,7 +84,7 @@ export function makeRenderQueue({
 				
 				const stats = fs.statSync(localInputVideoPath);
 				if (stats.size < 1024 * 1024) { 
-					throw new Error("Downloaded video is suspiciously small (< 1MB).");
+					throw new Error("Downloaded video is suspiciously small (< 1MB). Link might be broken.");
 				}
 				
 				job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
@@ -99,6 +102,7 @@ export function makeRenderQueue({
 				isCancelled = true;
 			};
 
+			// --- STEP 2: RENDER WITH WATCHDOG ---
 			await new Promise(async (resolve, reject) => {
 				let watchdogTimer = setTimeout(() => {
 					reject(new Error("Watchdog Timeout: Engine is completely frozen for 3 minutes."));
@@ -112,18 +116,19 @@ export function makeRenderQueue({
 						outputLocation: outPath,
 						inputProps: job.inputProps,
 						
-						// 🔥 ПОЛНАЯ МОЩНОСТЬ 🔥
-						// Убрали concurrency (Remotion автоматически задействует 100% мощности всех ядер)
+						// --- SAFE COMMERCIAL SETTINGS ---
+						concurrency: 2, // Balances render speed and server stability (prevents CPU starvation)
 						imageFormat: "jpeg", 
 						jpegQuality: 80, 
 						
 						chromiumOptions: {
 							args: [
-								"--disable-dev-shm-usage", // Защита от переполнения кэша (оставляем)
+								"--disable-dev-shm-usage", // CRITICAL: Prevents Docker 64MB RAM limit crashes
 								"--no-sandbox",
-								// 🔥 МЫ УДАЛИЛИ --disable-gpu и --disable-software-rasterizer 🔥
-								// Теперь браузер использует высокоскоростной программный ускоритель.
-								// 10-секундный фриз исчезнет, а скорость взлетит в разы!
+								"--disable-setuid-sandbox",
+								"--disable-gpu", // CRITICAL: Fixes the 10-second startup freeze on headless servers
+								"--disable-software-rasterizer", // Forces smooth linear CPU decoding
+								"--disable-web-security" // Extra fallback for CORS issues
 							],
 						},
 						
@@ -138,6 +143,7 @@ export function makeRenderQueue({
 							
 							job.progress = progress;
 							
+							// Reset watchdog on every successful frame
 							clearTimeout(watchdogTimer);
 							watchdogTimer = setTimeout(() => {
 								reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
@@ -153,6 +159,7 @@ export function makeRenderQueue({
 				}
 			});
 
+			// --- STEP 3: CLOUDFLARE R2 UPLOAD ---
 			if (!isCancelled) {
 				if (process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME) {
 					console.log(`[R2 Upload] Starting direct upload for job ${jobId}...`);
@@ -196,6 +203,9 @@ export function makeRenderQueue({
 			console.error(`Error rendering job ${jobId}:`, err);
 		} finally {
 			activeJobId = null;
+			
+			// --- STEP 4: GARBAGE COLLECTION ---
+			// Delete the 1GB input file from the SSD so your server doesn't run out of space
 			if (fs.existsSync(localInputVideoPath)) {
 				fs.unlinkSync(localInputVideoPath);
 			}
