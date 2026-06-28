@@ -111,17 +111,14 @@ export function makeRenderQueue({
                         codec: "h264",
                         outputLocation: outPath,
                         inputProps: job.inputProps,
-                        
                         fps: composition.fps, 
                         
-                        // 🔥 ФИКС СКОРОСТИ 1: Увеличиваем параллелизм
-                        concurrency: 4, 
+                        // 🔥 СТАБИЛЬНОСТЬ 1: Снижаем до 2 потоков
+                        // Предотвращает запуск слишком большого количества тяжелых процессов браузера
+                        concurrency: 2, 
                         
                         imageFormat: "jpeg", 
-                        // 🔥 ФИКС СКОРОСТИ 2: Снижаем I/O нагрузку
                         jpegQuality: 80, 
-                        
-                        // 🔥 ФИКС СКОРОСТИ 3: Оптимальное качество
                         crf: 23,
                         pixelFormat: "yuv420p",
                         
@@ -130,13 +127,11 @@ export function makeRenderQueue({
                                 "--disable-dev-shm-usage",
                                 "--no-sandbox",
                                 "--disable-setuid-sandbox",
-                                // 🔥 СНИМАЕМ ОГРАНИЧЕНИЯ ДЛЯ СКОРОСТИ:
-                                // Здесь больше НЕТ --disable-gpu и --disable-software-rasterizer
                                 "--disable-blink-features=AutomationControlled",
-                                "--autoplay-policy=no-user-gesture-required",
-                                // 🔥 ОСТАВЛЯЕМ ЗАЩИТУ ОТ ЛАГОВ ИЗ ПРОШЛОЙ ВЕРСИИ:
-                                "--video-buffer-size-mb=512",
-                                "--enable-features=OffthreadVideoDecode"
+                                "--autoplay-policy=no-user-gesture-required"
+                                // 🔥 СТАБИЛЬНОСТЬ 2: УДАЛЕНЫ ФЛАГИ АГРЕССИВНОГО КЭШИРОВАНИЯ
+                                // --video-buffer-size-mb=512 и --enable-features=OffthreadVideoDecode убраны,
+                                // чтобы остановить утечку оперативной памяти (OOM) на длинных видео.
                             ],
                         },
                         
@@ -152,9 +147,10 @@ export function makeRenderQueue({
                             job.progress = progress;
                             
                             clearTimeout(watchdogTimer);
+                            // Увеличиваем таймаут "зависания" до 5 минут для длинных видео на всякий случай
                             watchdogTimer = setTimeout(() => {
-                                reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
-                            }, 3 * 60 * 1000);
+                                reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 5 minutes.`));
+                            }, 5 * 60 * 1000);
                         },
                     });
                     
