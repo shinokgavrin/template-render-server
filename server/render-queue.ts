@@ -112,45 +112,38 @@ export function makeRenderQueue({
                         outputLocation: outPath,
                         inputProps: job.inputProps,
                         fps: composition.fps, 
-                        
-                        // 🔥 СТАБИЛЬНОСТЬ 1: Снижаем до 2 потоков
-                        // Предотвращает запуск слишком большого количества тяжелых процессов браузера
-                        concurrency: 2, 
-                        
+                        concurrency: 4, 
                         imageFormat: "jpeg", 
                         jpegQuality: 80, 
                         crf: 23,
                         pixelFormat: "yuv420p",
-                        
                         chromiumOptions: {
                             args: [
                                 "--disable-dev-shm-usage",
                                 "--no-sandbox",
                                 "--disable-setuid-sandbox",
+                                "--disable-web-security", // 🔥 BYPASS CORS globally in Chromium
+                                "--user-data-dir=/tmp/chrome-user-data", // Required when disable-web-security is active
                                 "--disable-blink-features=AutomationControlled",
-                                "--autoplay-policy=no-user-gesture-required"
-                                // 🔥 СТАБИЛЬНОСТЬ 2: УДАЛЕНЫ ФЛАГИ АГРЕССИВНОГО КЭШИРОВАНИЯ
-                                // --video-buffer-size-mb=512 и --enable-features=OffthreadVideoDecode убраны,
-                                // чтобы остановить утечку оперативной памяти (OOM) на длинных видео.
+                                "--autoplay-policy=no-user-gesture-required",
+                                "--video-buffer-size-mb=512",
+                                "--enable-features=OffthreadVideoDecode"
                             ],
                         },
-                        
                         onBrowserLog: (log) => {
-                            if (log.type === 'error' && (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::'))) {
+                            if (log.type === 'error' && (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::')) && !log.text.includes('Access-Control-Allow-Origin')) {
                                 reject(new Error(`Chromium Fatal Error Detected: ${log.text}`));
                             }
                         },
-                        
                         onProgress: (progress) => {
                             if (isCancelled) return reject(new Error("Render cancelled by user"));
                             
                             job.progress = progress;
                             
                             clearTimeout(watchdogTimer);
-                            // Увеличиваем таймаут "зависания" до 5 минут для длинных видео на всякий случай
                             watchdogTimer = setTimeout(() => {
-                                reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 5 minutes.`));
-                            }, 5 * 60 * 1000);
+                                reject(new Error(`Watchdog Timeout: Render stuck at ${(progress * 100).toFixed(1)}% for 3 minutes.`));
+                            }, 3 * 60 * 1000);
                         },
                     });
                     
