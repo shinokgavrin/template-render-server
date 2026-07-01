@@ -174,7 +174,7 @@ export const SmirnoffDigest: React.FC<{
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
-                // 🔥 ФОТО И ВИДЕО (СТРОГО ПО ЦЕНТРУ И ОГРОМНЫЕ)
+                // 🔥 ФОТО И ВИДЕО (СТРОГО ПО ЦЕНТРУ И ОТМАСШТАБИРОВАНЫ ДО 70%)
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
                     
@@ -186,8 +186,8 @@ export const SmirnoffDigest: React.FC<{
                                     <LoopingReaction 
                                         src={action.url} 
                                         style={{ 
-                                            width: '85%',        // 🔥 Огромный размер по ширине
-                                            height: '85%',       // 🔥 Огромный размер по высоте
+                                            width: '70%',        // 🔥 Установлен размер 70%
+                                            height: '70%',       // 🔥 Установлен размер 70%
                                             objectFit: 'contain',// Сохраняет пропорции
                                             borderRadius: '24px',
                                             boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
@@ -197,8 +197,8 @@ export const SmirnoffDigest: React.FC<{
                                     <Img 
                                         src={action.url} 
                                         style={{ 
-                                            width: '85%',        // 🔥 Огромный размер
-                                            height: '85%',       // 🔥 Огромный размер
+                                            width: '70%',        // 🔥 Установлен размер 70%
+                                            height: '70%',       // 🔥 Установлен размер 70%
                                             objectFit: 'contain',
                                             borderRadius: '24px',
                                             boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
@@ -216,27 +216,3 @@ export const SmirnoffDigest: React.FC<{
                         <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
                             <AnimatedQuote text={action.title} author={action.subtitle} />
                         </Sequence>
-                    );
-                }
-
-                if (action.type === 'overlay_number' && action.title) {
-                    return (
-                        <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
-                            <AnimatedNumber number={action.title} label={action.subtitle} />
-                        </Sequence>
-                    );
-                }
-
-                if (action.type === 'mute_title' && action.url) {
-                    return (
-                        <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
-                            <Audio src={action.url} volume={1} />
-                        </Sequence>
-                    );
-                }
-
-                return null;
-            })}
-        </AbsoluteFill>
-    );
-};
