@@ -68,6 +68,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
     );
 };
 
+// Универсальный текстовый движок анимаций
 const AnimatedTextOverlay: React.FC<{
     text: string;
     subtext?: string;
@@ -118,7 +119,6 @@ const AnimatedTextOverlay: React.FC<{
         displayedText = text.slice(0, progress);
     }
 
-    // Одобренный фикс позиционирования через Flexbox
     const justify = position === 'center' ? 'center' : position === 'left' ? 'flex-start' : 'flex-end';
     const align = 'center';
     const paddingSide = position === 'left' ? '100px' : position === 'right' ? '100px' : '0px';
@@ -164,6 +164,7 @@ const AnimatedTextOverlay: React.FC<{
     );
 };
 
+// Функция плавного и точного микширования звука диктора
 const getCurrentVolume = (frame: number, fps: number, actions: Action[]) => {
     let volume = 1;
     if (!actions) return volume;
@@ -224,6 +225,10 @@ export const SmirnoffDigest: React.FC<{
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
+                // Генерируем уникальный ключ для предотвращения наложений и зависания картинок в кэше React
+                const uniqueKey = `${action.type}-${action.url?.split('/').pop() || ''}-${startFrame}-${index}`;
+
+                // 1. Изображения, GIF и Видео (по центру и масштабировано до 70%)
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
                     
@@ -231,7 +236,7 @@ export const SmirnoffDigest: React.FC<{
                     const heightPct = action.max_height ? `${action.max_height}%` : '70%';
 
                     return (
-                        <Sequence key={`graphic-${index}`} from={startFrame} durationInFrames={durationInFrames}>
+                        <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
                             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
                                     <LoopingReaction 
@@ -262,12 +267,13 @@ export const SmirnoffDigest: React.FC<{
                     );
                 }
 
+                // 2. Универсальный текстовый слой
                 if (['overlay_quote', 'overlay_number', 'overlay_title', 'overlay_text'].includes(action.type) && action.title) {
                     const cleanType = action.type.replace('overlay_', '') as 'quote' | 'number' | 'title' | 'text';
                     const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
                     
                     return (
-                        <Sequence key={`text-${index}`} from={startFrame} durationInFrames={durationInFrames}>
+                        <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
                             {action.transition_sound && (
                                 <Audio src={action.transition_sound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
                             )}
@@ -283,9 +289,10 @@ export const SmirnoffDigest: React.FC<{
                     );
                 }
 
+                // 3. Слой приглушения звука (Mute)
                 if (action.type === 'mute_title' && action.url) {
                     return (
-                        <Sequence key={`audio-${index}`} from={startFrame} durationInFrames={durationInFrames}>
+                        <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
                             <Audio src={action.url} volume={1} />
                         </Sequence>
                     );
