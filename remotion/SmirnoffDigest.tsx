@@ -68,7 +68,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
     );
 };
 
-// Универсальный текстовый движок анимаций
+// Unified Text Animation Engine
 const AnimatedTextOverlay: React.FC<{
     text: string;
     subtext?: string;
@@ -119,6 +119,7 @@ const AnimatedTextOverlay: React.FC<{
         displayedText = text.slice(0, progress);
     }
 
+    // Advanced Flexbox Alignment Structure 
     const justify = position === 'center' ? 'center' : position === 'left' ? 'flex-start' : 'flex-end';
     const align = 'center';
     const paddingSide = position === 'left' ? '100px' : position === 'right' ? '100px' : '0px';
@@ -164,7 +165,7 @@ const AnimatedTextOverlay: React.FC<{
     );
 };
 
-// Функция плавного и точного микширования звука диктора
+// Precise Volume Interpolation Engine
 const getCurrentVolume = (frame: number, fps: number, actions: Action[]) => {
     let volume = 1;
     if (!actions) return volume;
@@ -210,6 +211,7 @@ export const SmirnoffDigest: React.FC<{
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
+            {/* Base Presenter Video Layer */}
             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Video 
                     src={originalVideoUrl} 
@@ -225,18 +227,22 @@ export const SmirnoffDigest: React.FC<{
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
-                // Генерируем уникальный ключ для предотвращения наложений и зависания картинок в кэше React
-                const uniqueKey = `${action.type}-${action.url?.split('/').pop() || ''}-${startFrame}-${index}`;
+                // Bulletproof Unique Tracking Key
+                const uniqueKey = `${action.type}-${index}-${startFrame}-${action.url?.split('/').pop()?.slice(0, 20) || 'no-url'}`;
 
-                // 1. Изображения, GIF и Видео (по центру и масштабировано до 70%)
+                // 1. Graphical Media Components (Images, GIFs, Loop Reactions)
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
                     
                     const widthPct = action.max_width ? `${action.max_width}%` : '70%';
                     const heightPct = action.max_height ? `${action.max_height}%` : '70%';
+                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
 
                     return (
                         <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
+                            {action.transition_sound && (
+                                <Audio src={action.transition_sound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
+                            )}
                             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
                                     <LoopingReaction 
@@ -267,7 +273,7 @@ export const SmirnoffDigest: React.FC<{
                     );
                 }
 
-                // 2. Универсальный текстовый слой
+                // 2. Advanced Kinetic Text Overlays
                 if (['overlay_quote', 'overlay_number', 'overlay_title', 'overlay_text'].includes(action.type) && action.title) {
                     const cleanType = action.type.replace('overlay_', '') as 'quote' | 'number' | 'title' | 'text';
                     const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
@@ -289,7 +295,7 @@ export const SmirnoffDigest: React.FC<{
                     );
                 }
 
-                // 3. Слой приглушения звука (Mute)
+                // 3. Automated Segment Audio Injection
                 if (action.type === 'mute_title' && action.url) {
                     return (
                         <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
