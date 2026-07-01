@@ -25,41 +25,11 @@ type Action = {
     max_height?: number;
     title?: string;
     subtitle?: string;
-};
-
-// Утилита для безопасного перевода абсолютных пикселей или процентов в валидный CSS
-const getMaxDimension = (val: number | undefined, fallback: string): string => {
-    if (!val) return fallback;
-    if (val <= 100) return `${val}%`; // Если ИИ передал проценты (например, 70)
-    return `${val}px`; // Если ИИ передал пиксели (например, 1080)
-};
-
-// Функция точного контроля громкости (устраняет перекрытия и щелчки кодека)
-const getCurrentVolume = (frame: number, fps: number, actions: Action[]) => {
-    let volume = 1;
-    
-    for (const action of actions) {
-        if (action.type === 'mute' || action.type === 'mute_title') {
-            const startFrame = Math.round(action.start_time * fps);
-            const endFrame = Math.round(action.end_time * fps);
-            
-            // Плавное затухание за 5 кадров до старта и плавный возврат за 5 кадров после окончания
-            if (frame >= startFrame - 5 && frame <= endFrame + 5) {
-                const fadeOut = interpolate(frame, [startFrame - 5, startFrame], [1, 0], { 
-                    extrapolateLeft: 'clamp', 
-                    extrapolateRight: 'clamp' 
-                });
-                const fadeIn = interpolate(frame, [endFrame, endFrame + 5], [0, 1], { 
-                    extrapolateLeft: 'clamp', 
-                    extrapolateRight: 'clamp' 
-                });
-                
-                volume = Math.min(volume, Math.min(fadeOut, fadeIn));
-            }
-        }
-    }
-    // Math.max(0.02, volume) защищает аудио-драйвер от клиппинга и щелчков при нулевой громкости
-    return Math.max(0.02, volume); 
+    animation?: 'pop' | 'slide' | 'fade' | 'typewriter' | 'highlight';
+    position?: 'center' | 'left' | 'right';
+    color?: string;
+    transition_sound?: string;
+    transition_volume?: number;
 };
 
 const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
@@ -91,7 +61,6 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 
     return (
         <Loop durationInFrames={naturalDuration}>
-            {/* 🔥 КРИТИЧЕСКИЙ ФИКС ЦЕНТРИРОВАНИЯ: Обертка в AbsoluteFill внутри цикла Loop */}
             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                 <OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
             </AbsoluteFill>
@@ -99,70 +68,126 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
     );
 };
 
-// Цитаты (СЛЕВА)
-const AnimatedQuote: React.FC<{ text: string; author?: string }> = ({ text, author }) => {
+const AnimatedTextOverlay: React.FC<{
+    text: string;
+    subtext?: string;
+    type: 'quote' | 'number' | 'title' | 'text';
+    animation?: 'pop' | 'slide' | 'fade' | 'typewriter' | 'highlight';
+    position?: 'center' | 'left' | 'right';
+    color?: string;
+}> = ({ text, subtext, type, animation = 'pop', position = 'center', color = '#38bdf8' }) => {
     const frame = useCurrentFrame();
     const { fps } = useVideoConfig();
-    
-    const scale = spring({ fps, frame, config: { damping: 14, mass: 0.8 } });
-    const opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+
+    let transform = '';
+    let opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
+
+    if (animation === 'pop') {
+        const scale = spring({ fps, frame, config: { damping: 12, mass: 0.7, stiffness: 130 } });
+        transform = `scale(${scale})`;
+    } else if (animation === 'slide') {
+        const x = interpolate(frame, [0, 15], [position === 'left' ? -200 : position === 'right' ? 200 : 0, 0], { extrapolateRight: 'clamp' });
+        const y = interpolate(frame, [0, 15], [position === 'center' ? 100 : 0, 0], { extrapolateRight: 'clamp' });
+        transform = `translate(${x}px, ${y}px)`;
+    } else if (animation === 'highlight') {
+        const pulse = interpolate(frame, [0, 15, 30], [1, 1.05, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'baseline' });
+        transform = `scale(${pulse})`;
+    }
+
+    const isHeroTitle = type === 'title';
+    const cardStyle: React.CSSProperties = {
+        transform,
+        opacity,
+        backgroundColor: isHeroTitle ? 'transparent' : 'rgba(15, 23, 42, 0.88)',
+        padding: isHeroTitle ? '20px' : '50px 70px',
+        borderRadius: '32px',
+        maxWidth: position === 'center' ? '85%' : '65%',
+        color: 'white',
+        border: isHeroTitle ? 'none' : '2px solid rgba(255,255,255,0.1)',
+        backdropFilter: isHeroTitle ? 'none' : 'blur(20px)',
+        textAlign: position === 'center' ? 'center' : 'left',
+        boxShadow: isHeroTitle ? 'none' : '0 30px 60px rgba(0,0,0,0.6)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: position === 'center' ? 'center' : 'flex-start',
+    };
+
+    let displayedText = text;
+    if (animation === 'typewriter') {
+        const progress = Math.floor(interpolate(frame, [0, Math.min(45, text.length * 1.5)], [0, text.length], { extrapolateRight: 'clamp' }));
+        displayedText = text.slice(0, progress);
+    }
+
+    // Одобренный фикс позиционирования через Flexbox
+    const justify = position === 'center' ? 'center' : position === 'left' ? 'flex-start' : 'flex-end';
+    const align = 'center';
+    const paddingSide = position === 'left' ? '100px' : position === 'right' ? '100px' : '0px';
 
     return (
-        <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '100px', pointerEvents: 'none' }}>
-            <div style={{ 
-                transform: `scale(${scale})`, 
-                transformOrigin: 'left center',
-                opacity, 
-                backgroundColor: 'rgba(15, 23, 42, 0.9)', 
-                padding: '60px 80px', 
-                borderRadius: '32px', 
-                maxWidth: '65%', 
-                color: 'white', 
-                border: '2px solid rgba(255,255,255,0.1)', 
-                backdropFilter: 'blur(16px)', 
-                textAlign: 'left',
-                boxShadow: '0 30px 60px rgba(0,0,0,0.5)'
-            }}>
-                <div style={{ fontSize: '80px', color: '#38bdf8', marginBottom: '-20px', lineHeight: 1 }}>"</div>
-                <div style={{ fontSize: '46px', fontWeight: 'bold', lineHeight: 1.4, fontFamily: 'sans-serif' }}>{text}</div>
-                {author && <div style={{ fontSize: '28px', color: '#94a3b8', marginTop: '30px', fontFamily: 'sans-serif', fontStyle: 'italic' }}>— {author}</div>}
+        <AbsoluteFill style={{ 
+            display: 'flex', 
+            flexDirection: 'row',
+            justifyContent: justify, 
+            alignItems: align, 
+            paddingLeft: paddingSide,
+            paddingRight: paddingSide,
+            pointerEvents: 'none' 
+        }}>
+            <div style={cardStyle}>
+                {type === 'quote' && <div style={{ fontSize: '90px', color: '#38bdf8', marginBottom: '-30px', lineHeight: 1, fontFamily: 'sans-serif' }}>"</div>}
+                
+                <div style={{ 
+                    fontSize: type === 'title' ? '110px' : type === 'number' ? '150px' : '48px', 
+                    fontWeight: '900', 
+                    lineHeight: 1.3, 
+                    fontFamily: 'sans-serif',
+                    color: type === 'number' || type === 'title' ? color : 'white',
+                    textShadow: '0 4px 30px rgba(0,0,0,0.8)'
+                }}>
+                    {displayedText}
+                </div>
+                
+                {subtext && (
+                    <div style={{ 
+                        fontSize: '30px', 
+                        color: '#94a3b8', 
+                        marginTop: '24px', 
+                        fontFamily: 'sans-serif', 
+                        fontStyle: type === 'quote' ? 'italic' : 'normal',
+                        opacity: interpolate(frame, [10, 25], [0, 1], { extrapolateRight: 'clamp' })
+                    }}>
+                        {type === 'quote' ? `— ${subtext}` : subtext}
+                    </div>
+                )}
             </div>
         </AbsoluteFill>
     );
 };
 
-// Цифры (СЛЕВА)
-const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, label }) => {
-    const frame = useCurrentFrame();
-    const { fps } = useVideoConfig();
-    
-    const scale = spring({ fps, frame, config: { damping: 10, mass: 1, stiffness: 120 } });
-    const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
+const getCurrentVolume = (frame: number, fps: number, actions: Action[]) => {
+    let volume = 1;
+    if (!actions) return volume;
 
-    return (
-        <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '100px', pointerEvents: 'none' }}>
-            <div style={{ 
-                transform: `scale(${scale})`, 
-                transformOrigin: 'left center',
-                opacity, 
-                backgroundColor: 'rgba(0, 0, 0, 0.75)', 
-                padding: '50px 80px', 
-                borderRadius: '40px', 
-                color: 'white', 
-                border: '3px solid #38bdf8', 
-                backdropFilter: 'blur(12px)', 
-                textAlign: 'left',
-                boxShadow: '0 0 50px rgba(56, 189, 248, 0.3)'
-            }}>
-                <div style={{ fontSize: '140px', fontWeight: '900', color: '#38bdf8', textShadow: '0 0 30px rgba(56, 189, 248, 0.6)', fontFamily: 'sans-serif', lineHeight: 1 }}>
-                    {number}
-                </div>
-                {label && <div style={{ fontSize: '36px', color: '#f1f5f9', marginTop: '10px', textTransform: 'uppercase', letterSpacing: '4px', fontWeight: 'bold', fontFamily: 'sans-serif' }}>
-                    {label}
-                </div>}
-            </div>
-        </AbsoluteFill>
-    );
+    for (const action of actions) {
+        if (action.type === 'mute' || action.type === 'mute_title') {
+            const startFrame = Math.round(action.start_time * fps);
+            const endFrame = Math.round(action.end_time * fps);
+            
+            if (frame >= startFrame - 5 && frame <= endFrame + 5) {
+                const fadeOut = interpolate(frame, [startFrame - 5, startFrame], [1, 0], { 
+                    extrapolateLeft: 'clamp', 
+                    extrapolateRight: 'clamp' 
+                });
+                const fadeIn = interpolate(frame, [endFrame, endFrame + 5], [0, 1], { 
+                    extrapolateLeft: 'clamp', 
+                    extrapolateRight: 'clamp' 
+                });
+                
+                volume = Math.min(volume, Math.min(fadeOut, fadeIn));
+            }
+        }
+    }
+    return Math.max(0.05, volume); 
 };
 
 export const SmirnoffDigest: React.FC<{
@@ -180,12 +205,10 @@ export const SmirnoffDigest: React.FC<{
         );
     }
 
-    // Вычисляем громкость через новую точную функцию
     const currentVolume = getCurrentVolume(frame, fps, actions);
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
-            {/* === ФОНОВОЕ ВИДЕО ДИКТОРA === */}
             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Video 
                     src={originalVideoUrl} 
@@ -195,10 +218,8 @@ export const SmirnoffDigest: React.FC<{
                 />
             </AbsoluteFill>
 
-            {/* === ОРИГИНАЛЬНЫЙ ЗВУК ДИКТОРA С ДИНАМИЧЕСКИМ ПРИГЛУШЕНИЕМ === */}
             <Audio src={originalVideoUrl} volume={currentVolume} />
 
-            {/* === НАЛОЖЕНИЯ (OVERLAYS) === */}
             {actions?.map((action, index) => {
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
@@ -206,30 +227,33 @@ export const SmirnoffDigest: React.FC<{
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
                     
-                    // Динамическая адаптация стилей под параметры max_width / max_height из n8n
-                    const overlayStyle: React.CSSProperties = {
-                        maxWidth: getMaxDimension(action.max_width, '70%'),
-                        maxHeight: getMaxDimension(action.max_height, '70%'),
-                        width: 'auto',
-                        height: 'auto',
-                        objectFit: 'contain',
-                        borderRadius: '24px',
-                        boxShadow: '0 30px 60px rgba(0,0,0,0.8)'
-                    };
+                    const widthPct = action.max_width ? `${action.max_width}%` : '70%';
+                    const heightPct = action.max_height ? `${action.max_height}%` : '70%';
 
                     return (
-                        <Sequence key={`action-${index}-${action.start_time}`} from={startFrame} durationInFrames={durationInFrames}>
-                            {/* Контейнер выравнивания */}
+                        <Sequence key={`graphic-${index}`} from={startFrame} durationInFrames={durationInFrames}>
                             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
                                     <LoopingReaction 
                                         src={action.url} 
-                                        style={overlayStyle}
+                                        style={{ 
+                                            width: widthPct,
+                                            height: heightPct,
+                                            objectFit: 'contain',
+                                            borderRadius: '24px',
+                                            boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
+                                        }}
                                     />
                                 ) : (
                                     <Img 
                                         src={action.url} 
-                                        style={overlayStyle}
+                                        style={{ 
+                                            width: widthPct,
+                                            height: heightPct,
+                                            objectFit: 'contain',
+                                            borderRadius: '24px',
+                                            boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
+                                        }}
                                         crossOrigin="anonymous"
                                     />
                                 )}
@@ -238,18 +262,23 @@ export const SmirnoffDigest: React.FC<{
                     );
                 }
 
-                if (action.type === 'overlay_quote' && action.title) {
+                if (['overlay_quote', 'overlay_number', 'overlay_title', 'overlay_text'].includes(action.type) && action.title) {
+                    const cleanType = action.type.replace('overlay_', '') as 'quote' | 'number' | 'title' | 'text';
+                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
+                    
                     return (
-                        <Sequence key={`quote-${index}`} from={startFrame} durationInFrames={durationInFrames}>
-                            <AnimatedQuote text={action.title} author={action.subtitle} />
-                        </Sequence>
-                    );
-                }
-
-                if (action.type === 'overlay_number' && action.title) {
-                    return (
-                        <Sequence key={`number-${index}`} from={startFrame} durationInFrames={durationInFrames}>
-                            <AnimatedNumber number={action.title} label={action.subtitle} />
+                        <Sequence key={`text-${index}`} from={startFrame} durationInFrames={durationInFrames}>
+                            {action.transition_sound && (
+                                <Audio src={action.transition_sound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
+                            )}
+                            <AnimatedTextOverlay 
+                                text={action.title}
+                                subtext={action.subtitle}
+                                type={cleanType}
+                                animation={action.animation || 'pop'}
+                                position={action.position || 'center'}
+                                color={action.color}
+                            />
                         </Sequence>
                     );
                 }
