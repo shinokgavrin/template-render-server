@@ -91,7 +91,7 @@ const AnimatedQuote: React.FC<{ text: string; author?: string }> = ({ text, auth
             </div>
         </AbsoluteFill>
     );
-}
+};
 
 // Цифры (СЛЕВА)
 const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, label }) => {
@@ -125,7 +125,7 @@ const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, 
             </div>
         </AbsoluteFill>
     );
-}
+};
 
 export const SmirnoffDigest: React.FC<{
     originalVideoUrl: string;
@@ -180,15 +180,14 @@ export const SmirnoffDigest: React.FC<{
                     
                     return (
                         <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
-                            {/* Выравнивание по центру экрана */}
                             <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
                                     <LoopingReaction 
                                         src={action.url} 
                                         style={{ 
-                                            width: '70%',        // 🔥 Установлен размер 70%
-                                            height: '70%',       // 🔥 Установлен размер 70%
-                                            objectFit: 'contain',// Сохраняет пропорции
+                                            width: '70%',
+                                            height: '70%',
+                                            objectFit: 'contain',
                                             borderRadius: '24px',
                                             boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
                                         }}
@@ -197,8 +196,8 @@ export const SmirnoffDigest: React.FC<{
                                     <Img 
                                         src={action.url} 
                                         style={{ 
-                                            width: '70%',        // 🔥 Установлен размер 70%
-                                            height: '70%',       // 🔥 Установлен размер 70%
+                                            width: '70%',
+                                            height: '70%',
                                             objectFit: 'contain',
                                             borderRadius: '24px',
                                             boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
@@ -216,3 +215,27 @@ export const SmirnoffDigest: React.FC<{
                         <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
                             <AnimatedQuote text={action.title} author={action.subtitle} />
                         </Sequence>
+                    );
+                }
+
+                if (action.type === 'overlay_number' && action.title) {
+                    return (
+                        <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
+                            <AnimatedNumber number={action.title} label={action.subtitle} />
+                        </Sequence>
+                    );
+                }
+
+                if (action.type === 'mute_title' && action.url) {
+                    return (
+                        <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
+                            <Audio src={action.url} volume={1} />
+                        </Sequence>
+                    );
+                }
+
+                return null;
+            })}
+        </AbsoluteFill>
+    );
+};
