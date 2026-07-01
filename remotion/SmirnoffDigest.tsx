@@ -27,7 +27,6 @@ type Action = {
     subtitle?: string;
 };
 
-// --- СТАБИЛЬНЫЕ РЕАКЦИИ С ТАЙМАУТОМ ---
 const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = ({ src, style }) => {
     const { fps } = useVideoConfig();
     const [handle] = useState(() => delayRender(`Fetching metadata for ${src}`));
@@ -35,7 +34,6 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
 
     useEffect(() => {
         const timeout = setTimeout(() => {
-            console.warn(`Metadata timeout for ${src}, using 5s fallback`);
             setNaturalDuration(Math.round(fps * 5));
             continueRender(handle);
         }, 5000);
@@ -47,9 +45,8 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
                 setNaturalDuration(duration);
                 continueRender(handle);
             })
-            .catch((err) => {
+            .catch(() => {
                 clearTimeout(timeout);
-                console.warn("Could not get metadata for reaction", err);
                 setNaturalDuration(Math.round(fps * 5));
                 continueRender(handle);
             });
@@ -64,10 +61,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
     );
 };
 
-// ==========================================
-// 🎨 АНИМИРОВАННЫЕ КОМПОНЕНТЫ (ПО ЛЕВОМУ КРАЮ)
-// ==========================================
-
+// Цитаты (СЛЕВА)
 const AnimatedQuote: React.FC<{ text: string; author?: string }> = ({ text, author }) => {
     const frame = useCurrentFrame();
     const { fps } = useVideoConfig();
@@ -76,34 +70,30 @@ const AnimatedQuote: React.FC<{ text: string; author?: string }> = ({ text, auth
     const opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
 
     return (
-        <AbsoluteFill style={{ 
-            justifyContent: 'center',  // По центру по вертикали
-            alignItems: 'flex-start',  // 🔥 Прижимаем к левому краю
-            paddingLeft: '100px',      // 🔥 Отступ от левого края экрана, чтобы не прилипало
-            pointerEvents: 'none' 
-        }}>
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '100px', pointerEvents: 'none' }}>
             <div style={{ 
                 transform: `scale(${scale})`, 
-                transformOrigin: 'left center', // Анимация вылетает из левого края
+                transformOrigin: 'left center',
                 opacity, 
                 backgroundColor: 'rgba(15, 23, 42, 0.85)', 
                 padding: '60px 80px', 
                 borderRadius: '32px', 
-                maxWidth: '60%', // Ограничиваем ширину, чтобы не перекрывать центр
+                maxWidth: '65%', 
                 color: 'white', 
                 border: '2px solid rgba(255,255,255,0.1)', 
                 backdropFilter: 'blur(16px)', 
-                textAlign: 'left', // 🔥 Текст теперь выровнен по левому краю
+                textAlign: 'left',
                 boxShadow: '0 30px 60px rgba(0,0,0,0.5)'
             }}>
                 <div style={{ fontSize: '80px', color: '#38bdf8', marginBottom: '-20px', lineHeight: 1 }}>"</div>
-                <div style={{ fontSize: '54px', fontWeight: 'bold', lineHeight: 1.4, fontFamily: 'sans-serif' }}>{text}</div>
+                <div style={{ fontSize: '50px', fontWeight: 'bold', lineHeight: 1.4, fontFamily: 'sans-serif' }}>{text}</div>
                 {author && <div style={{ fontSize: '28px', color: '#94a3b8', marginTop: '30px', fontFamily: 'sans-serif', fontStyle: 'italic' }}>— {author}</div>}
             </div>
         </AbsoluteFill>
     );
 }
 
+// Цифры (СЛЕВА)
 const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, label }) => {
     const frame = useCurrentFrame();
     const { fps } = useVideoConfig();
@@ -112,15 +102,10 @@ const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, 
     const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
 
     return (
-        <AbsoluteFill style={{ 
-            justifyContent: 'center',  // По центру по вертикали
-            alignItems: 'flex-start',  // 🔥 Прижимаем к левому краю
-            paddingLeft: '100px',      // 🔥 Отступ от левого края экрана
-            pointerEvents: 'none' 
-        }}>
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', paddingLeft: '100px', pointerEvents: 'none' }}>
             <div style={{ 
                 transform: `scale(${scale})`, 
-                transformOrigin: 'left center', // Анимация вылетает из левого края
+                transformOrigin: 'left center',
                 opacity, 
                 backgroundColor: 'rgba(0, 0, 0, 0.7)', 
                 padding: '50px 80px', 
@@ -128,28 +113,13 @@ const AnimatedNumber: React.FC<{ number: string; label?: string }> = ({ number, 
                 color: 'white', 
                 border: '3px solid #38bdf8', 
                 backdropFilter: 'blur(12px)', 
-                textAlign: 'left', // 🔥 Текст выровнен по левому краю
+                textAlign: 'left',
                 boxShadow: '0 0 50px rgba(56, 189, 248, 0.3)'
             }}>
-                <div style={{ 
-                    fontSize: '140px', 
-                    fontWeight: '900', 
-                    color: '#38bdf8', 
-                    textShadow: '0 0 30px rgba(56, 189, 248, 0.6)',
-                    fontFamily: 'sans-serif',
-                    lineHeight: 1
-                }}>
+                <div style={{ fontSize: '140px', fontWeight: '900', color: '#38bdf8', textShadow: '0 0 30px rgba(56, 189, 248, 0.6)', fontFamily: 'sans-serif', lineHeight: 1 }}>
                     {number}
                 </div>
-                {label && <div style={{ 
-                    fontSize: '36px', 
-                    color: '#f1f5f9', 
-                    marginTop: '10px', 
-                    textTransform: 'uppercase', 
-                    letterSpacing: '4px',
-                    fontWeight: 'bold',
-                    fontFamily: 'sans-serif'
-                }}>
+                {label && <div style={{ fontSize: '36px', color: '#f1f5f9', marginTop: '10px', textTransform: 'uppercase', letterSpacing: '4px', fontWeight: 'bold', fontFamily: 'sans-serif' }}>
                     {label}
                 </div>}
             </div>
@@ -177,15 +147,8 @@ export const SmirnoffDigest: React.FC<{
             const startFrame = action.start_time * fps;
             const endFrame = action.end_time * fps;
             
-            const fadeOut = interpolate(frame, [startFrame - 3, startFrame], [1, 0], { 
-                extrapolateLeft: 'clamp', 
-                extrapolateRight: 'clamp' 
-            });
-            
-            const fadeIn = interpolate(frame, [endFrame, endFrame + 3], [0, 1], { 
-                extrapolateLeft: 'clamp', 
-                extrapolateRight: 'clamp' 
-            });
+            const fadeOut = interpolate(frame, [startFrame - 3, startFrame], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+            const fadeIn = interpolate(frame, [endFrame, endFrame + 3], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
             
             if (frame >= startFrame - 3 && frame <= endFrame + 3) {
                 return Math.min(acc, Math.min(fadeOut, fadeIn));
@@ -196,7 +159,6 @@ export const SmirnoffDigest: React.FC<{
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
-            
             <AbsoluteFill>
                 <Video 
                     src={originalVideoUrl} 
@@ -212,34 +174,34 @@ export const SmirnoffDigest: React.FC<{
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
 
+                // 🔥 ФОТО И ВИДЕО (СТРОГО ПО ЦЕНТРУ И ОГРОМНЫЕ)
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
                     
                     return (
                         <Sequence key={index} from={startFrame} durationInFrames={durationInFrames}>
-                            {/* 🔥 Фото и видео тоже можно выровнять слева, если изменить настройки ниже. 
-                                Сейчас они остаются по центру (justifyContent: 'center', alignItems: 'center') */}
+                            {/* Выравнивание по центру экрана */}
                             <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
                                     <LoopingReaction 
                                         src={action.url} 
                                         style={{ 
-                                            maxWidth: action.max_width || 1080,
-                                            maxHeight: action.max_height || 1350,
-                                            objectFit: 'contain',
-                                            borderRadius: '20px',
-                                            boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
+                                            width: '85%',        // 🔥 Огромный размер по ширине
+                                            height: '85%',       // 🔥 Огромный размер по высоте
+                                            objectFit: 'contain',// Сохраняет пропорции
+                                            borderRadius: '24px',
+                                            boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
                                         }}
                                     />
                                 ) : (
                                     <Img 
                                         src={action.url} 
                                         style={{ 
-                                            maxWidth: action.max_width || 1080,
-                                            maxHeight: action.max_height || 1350,
+                                            width: '85%',        // 🔥 Огромный размер
+                                            height: '85%',       // 🔥 Огромный размер
                                             objectFit: 'contain',
-                                            borderRadius: '20px',
-                                            boxShadow: '0 20px 40px rgba(0,0,0,0.6)' 
+                                            borderRadius: '24px',
+                                            boxShadow: '0 30px 60px rgba(0,0,0,0.8)' 
                                         }}
                                         crossOrigin="anonymous"
                                     />
