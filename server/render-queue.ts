@@ -72,8 +72,12 @@ export function makeRenderQueue({
 
         const localInputVideoPath = path.join(rendersDir, `input_${jobId}.mp4`);
         const outPath = path.join(rendersDir, `${jobId}.mp4`);
+        
+        // Массив для отслеживания всех локально скачанных файлов для их гарантированного удаления в конце
+        const downloadedLocalPaths: string[] = [];
 
         try {
+            // 1. СКАЧИВАНИЕ ОСНОВНОГО ВИДЕО ПРЕЗЕНТЕРА
             let originalUrl = job.inputProps.originalVideoUrl;
             if (originalUrl && originalUrl.startsWith("http")) {
                 console.log(`[Localizer] Downloading huge remote video to local SSD...`);
@@ -85,7 +89,56 @@ export function makeRenderQueue({
                 }
                 
                 job.inputProps.originalVideoUrl = `http://localhost:${port}/renders/input_${jobId}.mp4`;
+                downloadedLocalPaths.push(localInputVideoPath);
                 console.log(`[Localizer] Download complete! Valid file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB.`);
+            }
+
+            // 2. АВТОМАТИЧЕСКАЯ ЛОКАЛИЗАЦИЯ ВСЕХ ОВЕРЛЕЕВ (УБИВАЕТ CORS НАКОРНЮ)
+            if (job.inputProps.actions && Array.isArray(job.inputProps.actions)) {
+                console.log(`[Localizer] Pre-downloading ${job.inputProps.actions.length} action assets to local SSD to bypass CORS...`);
+                for (let i = 0; i < job.inputProps.actions.length; i++) {
+                    const action = job.inputProps.actions[i];
+                    if (action.url && action.url.startsWith("http") && !action.url.includes(`localhost:${port}`)) {
+                        const fileExt = action.url.split('.').pop()?.split('?')[0] || 'mp4';
+                        const localFileName = `asset_${jobId}_${i}.${fileExt}`;
+                        const localPath = path.join(rendersDir, localFileName);
+                        
+                        try {
+                            console.log(`[Localizer] Downloading asset ${i}: ${action.url} -> ${localPath}`);
+                            await downloadFileToDisk(action.url, localPath);
+                            
+                            const stats = fs.statSync(localPath);
+                            if (stats.size > 0) {
+                                // Подменяем удаленный адрес R2 на локальный Express-адрес
+                                action.url = `http://localhost:${port}/renders/${localFileName}`;
+                                downloadedLocalPaths.push(localPath);
+                            }
+                        } catch (downloadErr) {
+                            console.error(`[Localizer] Failed to pre-download asset ${action.url}:`, downloadErr);
+                        }
+                    }
+                    
+                    // Также локализуем звуки переходов, если они есть
+                    if (action.transition_sound && action.transition_sound.startsWith("http") && !action.transition_sound.includes(`localhost:${port}`)) {
+                        const fileExt = action.transition_sound.split('.').pop()?.split('?')[0] || 'mp3';
+                        const localFileName = `sound_${jobId}_${i}.${fileExt}`;
+                        const localPath = path.join(rendersDir, localFileName);
+                        
+                        try {
+                            console.log(`[Localizer] Downloading transition sound ${i}: ${action.transition_sound} -> ${localPath}`);
+                            await downloadFileToDisk(action.transition_sound, localPath);
+                            
+                            const stats = fs.statSync(localPath);
+                            if (stats.size > 0) {
+                                action.transition_sound = `http://localhost:${port}/renders/${localFileName}`;
+                                downloadedLocalPaths.push(localPath);
+                            }
+                        } catch (downloadErr) {
+                            console.error(`[Localizer] Failed to pre-download sound ${action.transition_sound}:`, downloadErr);
+                        }
+                    }
+                }
+                console.log(`[Localizer] Pre-downloading complete!`);
             }
 
             const composition = await selectComposition({
@@ -122,8 +175,8 @@ export function makeRenderQueue({
                                 "--disable-dev-shm-usage",
                                 "--no-sandbox",
                                 "--disable-setuid-sandbox",
-                                "--disable-web-security", // 🔥 BYPASS CORS globally in Chromium
-                                "--user-data-dir=/tmp/chrome-user-data", // Required when disable-web-security is active
+                                "--disable-web-security", // Полный обход CORS
+                                "--user-data-dir=/tmp/chrome-user-data", 
                                 "--disable-blink-features=AutomationControlled",
                                 "--autoplay-policy=no-user-gesture-required",
                                 "--video-buffer-size-mb=512",
@@ -198,8 +251,17 @@ export function makeRenderQueue({
             console.error(`Error rendering job ${jobId}:`, err);
         } finally {
             activeJobId = null;
-            if (fs.existsSync(localInputVideoPath)) {
-                fs.unlinkSync(localInputVideoPath);
+            
+            // Гарантированная очистка абсолютно всех локальных временных файлов на диске
+            console.log(`[Localizer] Cleaning up temporary files...`);
+            for (const localPath of downloadedLocalPaths) {
+                if (fs.existsSync(localPath)) {
+                    try {
+                        fs.unlinkSync(localPath);
+                    } catch (unlinkErr) {
+                        console.error(`Failed to delete local asset ${localPath}:`, unlinkErr);
+                    }
+                }
             }
             processQueue();
         }
