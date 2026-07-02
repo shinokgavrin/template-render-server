@@ -4,7 +4,7 @@ import {
     Audio, 
     Img, 
     Sequence, 
-    Video, 
+    OffthreadVideo, 
     Loop, 
     useCurrentFrame, 
     useVideoConfig,
@@ -61,13 +61,7 @@ const LoopingReaction: React.FC<{ src: string; style: React.CSSProperties }> = (
     return (
         <Loop durationInFrames={naturalDuration}>
             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
-                <Video 
-                    src={src} 
-                    style={style} 
-                    muted={true} 
-                    loop={true}
-                    crossOrigin="anonymous" 
-                />
+                <OffthreadVideo src={src} style={style} crossOrigin="anonymous" />
             </AbsoluteFill>
         </Loop>
     );
@@ -84,39 +78,34 @@ const AnimatedTextOverlay: React.FC<{
     const frame = useCurrentFrame();
     const { fps } = useVideoConfig();
 
-    const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
-    const scale = spring({ fps, frame, config: { damping: 12, mass: 0.7, stiffness: 130 } });
-    
-    const slideX = interpolate(frame, [0, 15], [position === 'left' ? -200 : position === 'right' ? 200 : 0, 0], { extrapolateRight: 'clamp' });
-    const slideY = interpolate(frame, [0, 15], [position === 'center' ? 100 : 0, 0], { extrapolateRight: 'clamp' });
+    let transform = '';
+    let opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
 
-    let transform = `scale(${scale})`;
-    if (animation === 'slide') {
-        transform = `translate(${slideX}px, ${slideY}px)`;
-    } else if (animation === 'fade' || animation === 'typewriter') {
-        transform = 'scale(1)';
+    if (animation === 'pop') {
+        const scale = spring({ fps, frame, config: { damping: 12, mass: 0.7, stiffness: 130 } });
+        transform = `scale(${scale})`;
+    } else if (animation === 'slide') {
+        const x = interpolate(frame, [0, 15], [position === 'left' ? -200 : position === 'right' ? 200 : 0, 0], { extrapolateRight: 'clamp' });
+        const y = interpolate(frame, [0, 15], [position === 'center' ? 100 : 0, 0], { extrapolateRight: 'clamp' });
+        transform = `translate(${x}px, ${y}px)`;
     } else if (animation === 'highlight') {
         const pulse = interpolate(frame, [0, 15, 30], [1, 1.05, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'baseline' });
         transform = `scale(${pulse})`;
     }
 
-    const isNumber = type === 'number';
-    const isQuote = type === 'quote';
-    const isTitle = type === 'title';
-
+    const isHeroTitle = type === 'title';
     const cardStyle: React.CSSProperties = {
         transform,
-        transformOrigin: position === 'left' ? 'left center' : position === 'right' ? 'right center' : 'center center',
         opacity,
-        backgroundColor: isTitle ? 'transparent' : (isNumber ? 'rgba(0, 0, 0, 0.7)' : 'rgba(15, 23, 42, 0.88)'),
-        padding: isTitle ? '20px' : (isNumber ? '50px 80px' : '60px 80px'),
-        borderRadius: isNumber ? '40px' : '32px',
-        border: isTitle ? 'none' : (isNumber ? '3px solid #38bdf8' : '2px solid rgba(255,255,255,0.1)'),
-        backdropFilter: isTitle ? 'none' : 'blur(16px)',
-        boxShadow: isTitle ? 'none' : (isNumber ? '0 0 50px rgba(56, 189, 248, 0.3)' : '0 30px 60px rgba(0,0,0,0.5)'),
+        backgroundColor: isHeroTitle ? 'transparent' : 'rgba(15, 23, 42, 0.88)',
+        padding: isHeroTitle ? '20px' : '50px 70px',
+        borderRadius: '32px',
         maxWidth: position === 'center' ? '85%' : '65%',
         color: 'white',
+        border: isHeroTitle ? 'none' : '2px solid rgba(255,255,255,0.1)',
+        backdropFilter: isHeroTitle ? 'none' : 'blur(20px)',
         textAlign: position === 'center' ? 'center' : 'left',
+        boxShadow: isHeroTitle ? 'none' : '0 30px 60px rgba(0,0,0,0.6)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: position === 'center' ? 'center' : 'flex-start',
@@ -128,28 +117,29 @@ const AnimatedTextOverlay: React.FC<{
         displayedText = text.slice(0, progress);
     }
 
-    const align = position === 'left' ? 'flex-start' : position === 'right' ? 'flex-end' : 'center';
+    const justify = position === 'center' ? 'center' : position === 'left' ? 'flex-start' : 'flex-end';
+    const align = 'center';
     const paddingSide = position === 'left' ? '100px' : position === 'right' ? '100px' : '0px';
 
     return (
         <AbsoluteFill style={{ 
             display: 'flex', 
-            flexDirection: 'column',
-            justifyContent: 'center', 
+            flexDirection: 'row',
+            justifyContent: justify, 
             alignItems: align, 
             paddingLeft: paddingSide,
             paddingRight: paddingSide,
             pointerEvents: 'none' 
         }}>
             <div style={cardStyle}>
-                {isQuote && <div style={{ fontSize: '90px', color: '#38bdf8', marginBottom: '-20px', lineHeight: 1, fontFamily: 'sans-serif' }}>"</div>}
+                {type === 'quote' && <div style={{ fontSize: '90px', color: '#38bdf8', marginBottom: '-30px', lineHeight: 1, fontFamily: 'sans-serif' }}>"</div>}
                 
                 <div style={{ 
-                    fontSize: isTitle ? '110px' : (isNumber ? '150px' : '48px'), 
+                    fontSize: type === 'title' ? '110px' : type === 'number' ? '150px' : '48px', 
                     fontWeight: '900', 
                     lineHeight: 1.3, 
                     fontFamily: 'sans-serif',
-                    color: isNumber || isTitle ? color : 'white',
+                    color: type === 'number' || type === 'title' ? color : 'white',
                     textShadow: '0 4px 30px rgba(0,0,0,0.8)'
                 }}>
                     {displayedText}
@@ -161,10 +151,10 @@ const AnimatedTextOverlay: React.FC<{
                         color: '#94a3b8', 
                         marginTop: '24px', 
                         fontFamily: 'sans-serif', 
-                        fontStyle: isQuote ? 'italic' : 'normal',
+                        fontStyle: type === 'quote' ? 'italic' : 'normal',
                         opacity: interpolate(frame, [10, 25], [0, 1], { extrapolateRight: 'clamp' })
                     }}>
-                        {isQuote ? `— ${subtext}` : subtext}
+                        {type === 'quote' ? `— ${subtext}` : subtext}
                     </div>
                 )}
             </div>
@@ -195,7 +185,8 @@ const getCurrentVolume = (frame: number, fps: number, actions: Action[]) => {
             }
         }
     }
-    return Math.max(0.05, volume); 
+    // 🔥 FIXED: Drops all the way to 0 for a 100% mute.
+    return Math.max(0, volume); 
 };
 
 export const SmirnoffDigest: React.FC<{
@@ -208,7 +199,7 @@ export const SmirnoffDigest: React.FC<{
     if (!originalVideoUrl) {
         return (
             <AbsoluteFill style={{ backgroundColor: '#7f1d1d', justifyContent: 'center', alignItems: 'center' }}>
-                <h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '32px' }}>⚠️ ОШИБКА: Missing video URL</h1>
+                <h1 style={{ color: 'white', fontFamily: 'sans-serif', fontSize: '32px' }}>⚠️ ERROR: Missing video URL</h1>
             </AbsoluteFill>
         );
     }
@@ -217,8 +208,10 @@ export const SmirnoffDigest: React.FC<{
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
+            
+            {/* 🔥 FIXED: Swapped standard <Video> for <OffthreadVideo> to prevent heavy-file stuttering */}
             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Video 
+                <OffthreadVideo 
                     src={originalVideoUrl} 
                     muted={true}
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
@@ -231,23 +224,18 @@ export const SmirnoffDigest: React.FC<{
             {actions?.map((action, index) => {
                 const startFrame = Math.round(action.start_time * fps);
                 const durationInFrames = Math.max(1, Math.round((action.end_time - action.start_time) * fps));
-
                 const uniqueKey = `${action.type}-${index}-${startFrame}-${action.url?.split('/').pop()?.slice(0, 20) || 'no-url'}`;
 
                 if ((action.type === 'overlay_image' || action.type === 'overlay_gif') && action.url) {
                     const isVideoAsset = action.url.toLowerCase().endsWith('.mp4') || action.url.toLowerCase().endsWith('.webm');
-                    
-                    // Умное разделение размеров: видео — крупно (85%), фото — аккуратно (70%)
-                    const defaultSize = isVideoAsset ? '85%' : '70%';
-                    const widthPct = action.max_width ? `${action.max_width}%` : defaultSize;
-                    const heightPct = action.max_height ? `${action.max_height}%` : defaultSize;
-                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 0.6;
-                    const transitionSound = action.transition_sound || "https://pub-9133209d2ae746859bab1bf8500330d4.r2.dev/AUDIO/whoosh.mp3";
+                    const widthPct = action.max_width ? `${action.max_width}%` : '70%';
+                    const heightPct = action.max_height ? `${action.max_height}%` : '70%';
+                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
 
                     return (
                         <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
-                            {transitionSound && (
-                                <Audio src={transitionSound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
+                            {action.transition_sound && (
+                                <Audio src={action.transition_sound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
                             )}
                             <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
                                 {isVideoAsset ? (
@@ -281,13 +269,12 @@ export const SmirnoffDigest: React.FC<{
 
                 if (['overlay_quote', 'overlay_number', 'overlay_title', 'overlay_text'].includes(action.type) && action.title) {
                     const cleanType = action.type.replace('overlay_', '') as 'quote' | 'number' | 'title' | 'text';
-                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 0.6;
-                    const transitionSound = action.transition_sound || "https://pub-9133209d2ae746859bab1bf8500330d4.r2.dev/AUDIO/whoosh.mp3";
+                    const soundVol = action.transition_volume !== undefined ? action.transition_volume : 1;
                     
                     return (
                         <Sequence key={uniqueKey} from={startFrame} durationInFrames={durationInFrames}>
-                            {transitionSound && (
-                                <Audio src={transitionSound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
+                            {action.transition_sound && (
+                                <Audio src={action.transition_sound} volume={soundVol} startFrom={0} endAt={Math.min(fps * 2, durationInFrames)} />
                             )}
                             <AnimatedTextOverlay 
                                 text={action.title}
