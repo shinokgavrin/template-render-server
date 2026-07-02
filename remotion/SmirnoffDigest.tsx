@@ -82,18 +82,30 @@ const AnimatedTextOverlay: React.FC<{
 	const frame = useCurrentFrame();
 	const { fps } = useVideoConfig();
 
+	// Флаг для экстремального ускорения анимации цифр
+	const isNumber = type === 'number';
+
 	let transform = '';
-	let opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
+	// Цифры появляются за 4 кадра вместо 8
+	let opacity = interpolate(frame, isNumber ? [0, 4] : [0, 8], [0, 1], { extrapolateRight: 'clamp' });
 
 	if (animation === 'pop') {
-		const scale = spring({ fps, frame, config: { damping: 12, mass: 0.7, stiffness: 130 } });
+		// Более жесткая и быстрая "пружина" для цифр
+		const springConfig = isNumber 
+			? { damping: 10, mass: 0.4, stiffness: 250 } 
+			: { damping: 12, mass: 0.7, stiffness: 130 };
+		const scale = spring({ fps, frame, config: springConfig });
 		transform = `scale(${scale})`;
 	} else if (animation === 'slide') {
-		const x = interpolate(frame, [0, 15], [position === 'left' ? -200 : position === 'right' ? 200 : 0, 0], { extrapolateRight: 'clamp' });
-		const y = interpolate(frame, [0, 15], [position === 'center' ? 100 : 0, 0], { extrapolateRight: 'clamp' });
+		// Быстрый выезд за 6 кадров вместо 15 для цифр
+		const slideFrames = isNumber ? [0, 6] : [0, 15];
+		const x = interpolate(frame, slideFrames, [position === 'left' ? -200 : position === 'right' ? 200 : 0, 0], { extrapolateRight: 'clamp' });
+		const y = interpolate(frame, slideFrames, [position === 'center' ? 100 : 0, 0], { extrapolateRight: 'clamp' });
 		transform = `translate(${x}px, ${y}px)`;
 	} else if (animation === 'highlight') {
-		const pulse = interpolate(frame, [0, 15, 30], [1, 1.05, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'baseline' });
+		// Резкий, акцентированный пульс (12 кадров вместо 30) для цифр
+		const highlightFrames = isNumber ? [0, 6, 12] : [0, 15, 30];
+		const pulse = interpolate(frame, highlightFrames, [1, 1.1, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'baseline' });
 		transform = `scale(${pulse})`;
 	}
 
@@ -134,7 +146,10 @@ const AnimatedTextOverlay: React.FC<{
 
 	let displayedText = text;
 	if (animation === 'typewriter') {
-		const progress = Math.floor(interpolate(frame, [0, Math.min(45, text.length * 1.5)], [0, text.length], { extrapolateRight: 'clamp' }));
+		// Если это цифра (или короткий текст), она "напечатается" в 3 раза быстрее
+		const speedMultiplier = isNumber ? 0.5 : 1.5;
+		const maxFrames = isNumber ? 15 : 45;
+		const progress = Math.floor(interpolate(frame, [0, Math.min(maxFrames, text.length * speedMultiplier)], [0, text.length], { extrapolateRight: 'clamp' }));
 		displayedText = text.slice(0, progress);
 	}
 
