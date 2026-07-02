@@ -207,7 +207,10 @@ export function makeRenderQueue({
                         outputLocation: outPath,
                         inputProps: job.inputProps,
                         fps: composition.fps, 
-                        concurrency: 4, 
+                        
+                        // 🔥 Рендерим строго в 1 поток для защиты от переполнения памяти (OOM/SIGKILL)
+                        concurrency: 1, 
+                        
                         imageFormat: "jpeg", 
                         jpegQuality: 80, 
                         crf: 23,
@@ -220,8 +223,10 @@ export function makeRenderQueue({
                                 "--disable-web-security", 
                                 "--user-data-dir=/tmp/chrome-user-data", 
                                 "--autoplay-policy=no-user-gesture-required",
-                                "--video-buffer-size-mb=1024", // 🔥 Restored: Allows heavy files to buffer in RAM
-                                "--enable-features=OffthreadVideoDecode" // 🔥 Restored: Hardware decoding separation
+                                
+                                // 🔥 Ограничиваем буфер RAM для тяжелых видео и включаем аппаратное декодирование
+                                "--video-buffer-size-mb=512", 
+                                "--enable-features=OffthreadVideoDecode" 
                             ],
                         },
                         onBrowserLog: (log) => {
