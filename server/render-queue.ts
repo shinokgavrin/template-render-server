@@ -207,12 +207,9 @@ export function makeRenderQueue({
                         outputLocation: outPath,
                         inputProps: job.inputProps,
                         fps: composition.fps, 
-                        
-                        // 🔥 Рендерим строго в 1 поток для защиты от переполнения памяти (OOM/SIGKILL)
-                        concurrency: 1, 
-                        
+                        concurrency: 1, // Строго 1 поток
                         imageFormat: "jpeg", 
-                        jpegQuality: 80, 
+                        jpegQuality: 75, // Снижено качество для экономии оперативной памяти
                         crf: 23,
                         pixelFormat: "yuv420p",
                         chromiumOptions: {
@@ -223,14 +220,13 @@ export function makeRenderQueue({
                                 "--disable-web-security", 
                                 "--user-data-dir=/tmp/chrome-user-data", 
                                 "--autoplay-policy=no-user-gesture-required",
-                                
-                                // 🔥 Ограничиваем буфер RAM для тяжелых видео и включаем аппаратное декодирование
-                                "--video-buffer-size-mb=512", 
-                                "--enable-features=OffthreadVideoDecode" 
+                                // ❌ Опасные флаги работы с памятью удалены
                             ],
                         },
                         onBrowserLog: (log) => {
-                            if (log.type === 'error' && (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::')) && !log.text.includes('Access-Control-Allow-Origin')) {
+                            if (log.type === 'error' && 
+                               (log.text.includes('ERR_FAILED') || log.text.includes('CORS') || log.text.includes('net::')) && 
+                               !log.text.includes('Access-Control-Allow-Origin')) {
                                 reject(new Error(`Chromium Fatal Error Detected: ${log.text}`));
                             }
                         },
@@ -238,7 +234,9 @@ export function makeRenderQueue({
                             if (isCancelled) return reject(new Error("Render cancelled"));
                             job.progress = progress;
                             clearTimeout(watchdogTimer);
-                            watchdogTimer = setTimeout(() => reject(new Error("Render stuck.")), 10 * 60 * 1000);
+                            watchdogTimer = setTimeout(() => {
+                                reject(new Error(`Render stuck at ${(progress * 100).toFixed(1)}%`));
+                            }, 10 * 60 * 1000);
                         },
                     });
                     
