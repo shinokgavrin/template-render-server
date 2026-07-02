@@ -138,7 +138,7 @@ export function makeRenderQueue({
                 downloadedLocalPaths.push(localInputVideoPath);
             }
 
-            // 2. СКАЧИВАЕМ ВСЕ КАРТИНКИ, ВИДЕО И ЗВУКИ (УБИВАЕТ CORS)
+            // 2. СКАЧИВАЕМ ВСЕ КАРТИНКИ, ВИДЕО И ЗВУКИ (И УДАЛЯЕМ БИТЫЕ ССЫЛКИ)
             if (job.inputProps.actions && Array.isArray(job.inputProps.actions)) {
                 for (let i = 0; i < job.inputProps.actions.length; i++) {
                     const action = job.inputProps.actions[i];
@@ -151,12 +151,15 @@ export function makeRenderQueue({
                         
                         try {
                             await downloadFileToDisk(action.url, localPath);
-                            if (fs.statSync(localPath).size > 0) {
+                            if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
                                 action.url = `http://localhost:${currentAssetPort}/${localFileName}`;
                                 downloadedLocalPaths.push(localPath);
+                            } else {
+                                delete action.url; // Удаляем битую ссылку, чтобы не крашить Remotion
                             }
                         } catch (e) {
-                            console.error(`Failed to download asset: ${action.url}`, e);
+                            console.warn(`[Warning] Failed to download asset (404/Error), skipping: ${action.url}`);
+                            delete action.url; // Удаляем битую ссылку, чтобы не крашить Remotion
                         }
                     }
                     
@@ -168,12 +171,15 @@ export function makeRenderQueue({
                         
                         try {
                             await downloadFileToDisk(action.transition_sound, localPath);
-                            if (fs.statSync(localPath).size > 0) {
+                            if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
                                 action.transition_sound = `http://localhost:${currentAssetPort}/${localFileName}`;
                                 downloadedLocalPaths.push(localPath);
+                            } else {
+                                delete action.transition_sound; // Удаляем битую ссылку
                             }
                         } catch (e) {
-                            console.error(`Failed to download sound: ${action.transition_sound}`, e);
+                            console.warn(`[Warning] Failed to download sound (404/Error), skipping: ${action.transition_sound}`);
+                            delete action.transition_sound; // Удаляем битую ссылку, чтобы не крашить Remotion
                         }
                     }
                 }
@@ -214,6 +220,8 @@ export function makeRenderQueue({
                                 "--disable-web-security", 
                                 "--user-data-dir=/tmp/chrome-user-data", 
                                 "--autoplay-policy=no-user-gesture-required",
+                                "--video-buffer-size-mb=1024", // 🔥 Restored: Allows heavy files to buffer in RAM
+                                "--enable-features=OffthreadVideoDecode" // 🔥 Restored: Hardware decoding separation
                             ],
                         },
                         onBrowserLog: (log) => {
