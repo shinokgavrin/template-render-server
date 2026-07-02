@@ -155,11 +155,11 @@ export function makeRenderQueue({
                                 action.url = `http://localhost:${currentAssetPort}/${localFileName}`;
                                 downloadedLocalPaths.push(localPath);
                             } else {
-                                delete action.url; // Удаляем битую ссылку, чтобы не крашить Remotion
+                                delete action.url;
                             }
                         } catch (e) {
                             console.warn(`[Warning] Failed to download asset (404/Error), skipping: ${action.url}`);
-                            delete action.url; // Удаляем битую ссылку, чтобы не крашить Remotion
+                            delete action.url;
                         }
                     }
                     
@@ -175,11 +175,11 @@ export function makeRenderQueue({
                                 action.transition_sound = `http://localhost:${currentAssetPort}/${localFileName}`;
                                 downloadedLocalPaths.push(localPath);
                             } else {
-                                delete action.transition_sound; // Удаляем битую ссылку
+                                delete action.transition_sound;
                             }
                         } catch (e) {
                             console.warn(`[Warning] Failed to download sound (404/Error), skipping: ${action.transition_sound}`);
-                            delete action.transition_sound; // Удаляем битую ссылку, чтобы не крашить Remotion
+                            delete action.transition_sound;
                         }
                     }
                 }
@@ -207,10 +207,18 @@ export function makeRenderQueue({
                         outputLocation: outPath,
                         inputProps: job.inputProps,
                         fps: composition.fps, 
-                        concurrency: 1, // Строго 1 поток
+                        
+                        // ⚡ БЕЗОПАСНОЕ УСКОРЕНИЕ: Параллелим обработку (было 1, стало 2).
+                        // Поскольку мы используем легкий <Video>, 2 потока не вызовут переполнение памяти.
+                        concurrency: 2, 
+                        
                         imageFormat: "jpeg", 
-                        jpegQuality: 75, // Снижено качество для экономии оперативной памяти
+                        jpegQuality: 80, // Возвращаем нормальное качество
                         crf: 23,
+                        
+                        // ⚡ БЕЗОПАСНОЕ УСКОРЕНИЕ: Заставляем FFMPEG склеивать быстрее (по умолчанию medium)
+                        x264Preset: "veryfast",
+                        
                         pixelFormat: "yuv420p",
                         chromiumOptions: {
                             args: [
@@ -220,7 +228,10 @@ export function makeRenderQueue({
                                 "--disable-web-security", 
                                 "--user-data-dir=/tmp/chrome-user-data", 
                                 "--autoplay-policy=no-user-gesture-required",
-                                // ❌ Опасные флаги работы с памятью удалены
+                                "--disable-gpu", // Оставляем отключенным GPU, т.к. на сервере его нет
+                                
+                                // ⚡ БЕЗОПАСНОЕ УСКОРЕНИЕ: Даем JS-движку чуть больше воздуха для работы (1ГБ вместо 512МБ)
+                                "--js-flags=--max-old-space-size=1024",
                             ],
                         },
                         onBrowserLog: (log) => {
